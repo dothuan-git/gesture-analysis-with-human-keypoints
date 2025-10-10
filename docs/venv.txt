@@ -1,0 +1,13 @@
+python -m venv venv
+
+venv\Scripts\activate
+
+pip install package1 package2
+
+pip freeze > requirements.txt
+
+deactivate
+
+
+
+rmdir /s /q venv
