@@ -15,8 +15,9 @@ CONFIG = {
     'DETECT_HANDS': False,
     'SAVE_FRAMES': False,
     'KEYPOINTS_FILTER': [
-        'lipsUpperOuter'
-    ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'rightEyeUpper0']
+        'lipsUpperOuter', 'lipsLowerOuter',
+    ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
+    'DRAW_KEYPOINT_IDS': False,
 }
 
 
@@ -153,6 +154,7 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
     # frame = cv2.flip(frame, 1)
     annotated_frame = frame.copy()
     mediapipe_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+    draw_ids = CONFIG.get('DRAW_KEYPOINT_IDS', False)
 
     # Face detection and processing
     if CONFIG['DETECT_FACE']:
@@ -180,7 +182,7 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                 face_keypoints = sv.KeyPoints(xy=filtered_xy, confidence=filtered_confidence)
                 # Pass original landmark IDs to visualizer
                 annotated_frame = utils.keypoints_visualizer(
-                    annotated_frame, face_keypoints, draw_ids=True, landmark_ids=sorted_indices
+                    annotated_frame, face_keypoints, draw_ids=draw_ids, landmark_ids=sorted_indices
                 )
             else:
                 # Visualize all keypoints
@@ -196,7 +198,7 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
         )
         with mp.tasks.vision.HandLandmarker.create_from_options(hand_options) as handmarker:
             hand_result = handmarker.detect(mediapipe_image)
-            hand_csv = f'{output_dir}/hands_22.csv'
+            hand_csv = f'{output_dir}/hands_2.csv'
             extract_and_write_hand_landmarks(frame_idx, hand_result, csv_path=hand_csv)
 
             if hand_result.hand_landmarks:
@@ -206,7 +208,7 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                     keypoints_xy = np.array([[lm.x * width, lm.y * height] for lm in landmarks],
                                            dtype=np.float32).reshape(1, -1, 2)
                     hand_keypoints = sv.KeyPoints(xy=keypoints_xy, confidence=np.ones((1, len(landmarks))))
-                    annotated_frame = utils.keypoints_visualizer(annotated_frame, hand_keypoints, draw_ids=True, color=color)
+                    annotated_frame = utils.keypoints_visualizer(annotated_frame, hand_keypoints, draw_ids=draw_ids, color=color)
 
     # Add frame index text
     cv2.putText(annotated_frame, f"Frame: {frame_idx}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)

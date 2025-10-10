@@ -86,7 +86,7 @@ def keypoints_visualizer(frame, key_points, edges=None, draw_ids=False, color=sv
                 (int(x), int(y) - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.3,
-                (0, 255, 255),
+                (255, 70, 0),
                 1,
                 cv2.LINE_AA
             )

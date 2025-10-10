@@ -133,7 +133,7 @@ def process_frame(frame: np.ndarray, hands: mp.solutions.hands.Hands,
     annotated = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
 
     # Write hand landmarks to CSV
-    hand_csv = f'{output_dir}/hands_11.csv'
+    hand_csv = f'{output_dir}/hands_1.csv'
     utils.create_folder_if_not_exist(output_dir)
     extract_and_write_hand_landmarks(frame_idx, hands_res, hand_csv)
 
