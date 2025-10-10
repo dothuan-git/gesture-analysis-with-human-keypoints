@@ -8,10 +8,12 @@ CONFIG = {
     'CSV_PATH': 'data/IMG_0004/face.csv',
     'FPS': 30.0,  # Frames per second of the video
     'POINT_PAIRS': [
-        (0, 17),
+        (0, 17),     # Mouth corners
     ],
+    'ZOOM_DURATION': [12000, 14000],  # [start_frame, end_frame] for zoomed subplot
+    'X_AXIS_MODE': 'frame',  # 'time' (seconds) or 'frame' (frame numbers)
     'PLOT_TITLE': 'Facial Keypoint Displacement Over Time',
-    'FIGURE_SIZE': (12, 8),
+    'FIGURE_SIZE': (24, 12),
     'SAVE_PLOT': True,
     'OUTPUT_PATH': 'displacement_plot.png',
 }
@@ -86,17 +88,47 @@ def frames_to_time(frames: np.ndarray, fps: float) -> np.ndarray:
 
 def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
                       fps: float, use_3d: bool = True):
-    """Plot displacement for all point pairs over time."""
-    fig, ax = plt.subplots(figsize=CONFIG['FIGURE_SIZE'])
+    """Plot displacement for all point pairs over time with zoomed subplot."""
+    fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
+    
+    # Create two subplots: full view and zoomed view
+    ax1 = plt.subplot(2, 1, 1)
+    ax2 = plt.subplot(2, 1, 2)
     
     frames = np.arange(len(df))
     time = frames_to_time(frames, fps)
+    
+    # Determine x-axis data based on mode
+    x_axis_mode = CONFIG.get('X_AXIS_MODE', 'time').lower()
+    if x_axis_mode == 'frame':
+        x_data = frames
+        x_label = 'Frame Number'
+    else:
+        x_data = time
+        x_label = 'Time (seconds)'
+    
+    # Get zoom parameters
+    zoom_start, zoom_end = CONFIG.get('ZOOM_DURATION', [0, len(df)])
+    zoom_start = max(0, min(zoom_start, len(df) - 1))
+    zoom_end = max(zoom_start + 1, min(zoom_end, len(df)))
+    
+    if x_axis_mode == 'frame':
+        zoom_x_start = zoom_start
+        zoom_x_end = zoom_end
+    else:
+        zoom_x_start = zoom_start / fps
+        zoom_x_end = zoom_end / fps
     
     for point_a, point_b in point_pairs:
         try:
             displacements = calculate_displacement_for_pair(df, point_a, point_b, use_3d)
             label = f"Point {point_a} ↔ Point {point_b}"
-            ax.plot(time, displacements, marker='o', markersize=2, label=label, alpha=0.7)
+            
+            # Plot full view
+            ax1.plot(x_data, displacements, marker='o', markersize=2, label=label, alpha=0.7)
+            
+            # Plot zoomed view
+            ax2.plot(x_data, displacements, marker='o', markersize=3, label=label, alpha=0.7)
             
             # Print statistics
             mean_disp = np.nanmean(displacements)
@@ -110,12 +142,31 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
         except Exception as e:
             print(f"Error plotting pair ({point_a}, {point_b}): {e}")
     
-    ax.set_xlabel('Time (seconds)', fontsize=12)
-    ax.set_ylabel('Displacement (normalized units)', fontsize=12)
+    # Configure full view subplot
     dimension = "3D" if use_3d else "2D"
-    ax.set_title(f"{CONFIG['PLOT_TITLE']} ({dimension})", fontsize=14)
-    ax.legend(loc='best', fontsize=10)
-    ax.grid(True, alpha=0.3)
+    ax1.set_xlabel(x_label, fontsize=11)
+    ax1.set_ylabel('Displacement (normalized units)', fontsize=11)
+    ax1.set_title(f"{CONFIG['PLOT_TITLE']} ({dimension}) - Full View", fontsize=13)
+    ax1.legend(loc='best', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+    
+    # Highlight zoom region on full view
+    ax1.axvspan(zoom_x_start, zoom_x_end, alpha=0.2, color='yellow', 
+                label=f'Zoom region')
+    
+    # Configure zoomed view subplot
+    ax2.set_xlim(zoom_x_start, zoom_x_end)
+    ax2.set_xlabel(x_label, fontsize=11)
+    ax2.set_ylabel('Displacement (normalized units)', fontsize=11)
+    
+    if x_axis_mode == 'frame':
+        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end}", fontsize=13)
+    else:
+        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end} ({zoom_x_start:.2f}s - {zoom_x_end:.2f}s)", 
+                      fontsize=13)
+    
+    ax2.legend(loc='best', fontsize=9)
+    ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
     
@@ -128,11 +179,36 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
 
 def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
                                 fps: float, use_3d: bool = True):
-    """Analyze frame-to-frame displacement changes (velocity)."""
-    fig, ax = plt.subplots(figsize=CONFIG['FIGURE_SIZE'])
+    """Analyze frame-to-frame displacement changes (velocity) with zoomed subplot."""
+    fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
+    
+    # Create two subplots: full view and zoomed view
+    ax1 = plt.subplot(2, 1, 1)
+    ax2 = plt.subplot(2, 1, 2)
     
     frames = np.arange(len(df))
     time = frames_to_time(frames, fps)
+    
+    # Determine x-axis data based on mode
+    x_axis_mode = CONFIG.get('X_AXIS_MODE', 'time').lower()
+    if x_axis_mode == 'frame':
+        x_data = frames
+        x_label = 'Frame Number'
+    else:
+        x_data = time
+        x_label = 'Time (seconds)'
+    
+    # Get zoom parameters
+    zoom_start, zoom_end = CONFIG.get('ZOOM_DURATION', [0, len(df)])
+    zoom_start = max(0, min(zoom_start, len(df) - 1))
+    zoom_end = max(zoom_start + 1, min(zoom_end, len(df)))
+    
+    if x_axis_mode == 'frame':
+        zoom_x_start = zoom_start
+        zoom_x_end = zoom_end
+    else:
+        zoom_x_start = zoom_start / fps
+        zoom_x_end = zoom_end / fps
     
     for point_a, point_b in point_pairs:
         try:
@@ -143,17 +219,42 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
             changes = np.insert(changes, 0, 0)  # Add 0 for first frame
             
             label = f"Point {point_a} ↔ Point {point_b}"
-            ax.plot(time, changes, marker='o', markersize=2, label=label, alpha=0.7)
+            
+            # Plot full view
+            ax1.plot(x_data, changes, marker='o', markersize=2, label=label, alpha=0.7)
+            
+            # Plot zoomed view
+            ax2.plot(x_data, changes, marker='o', markersize=3, label=label, alpha=0.7)
             
         except Exception as e:
             print(f"Error analyzing pair ({point_a}, {point_b}): {e}")
     
-    ax.set_xlabel('Time (seconds)', fontsize=12)
-    ax.set_ylabel('Displacement Change (velocity)', fontsize=12)
-    ax.set_title('Frame-to-Frame Displacement Changes', fontsize=14)
-    ax.legend(loc='best', fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+    # Configure full view subplot
+    ax1.set_xlabel(x_label, fontsize=11)
+    ax1.set_ylabel('Displacement Change (velocity)', fontsize=11)
+    ax1.set_title('Frame-to-Frame Displacement Changes - Full View', fontsize=13)
+    ax1.legend(loc='best', fontsize=9)
+    ax1.grid(True, alpha=0.3)
+    ax1.axhline(y=0, color='r', linestyle='--', alpha=0.5)
+    
+    # Highlight zoom region on full view
+    ax1.axvspan(zoom_x_start, zoom_x_end, alpha=0.2, color='yellow', 
+                label=f'Zoom region')
+    
+    # Configure zoomed view subplot
+    ax2.set_xlim(zoom_x_start, zoom_x_end)
+    ax2.set_xlabel(x_label, fontsize=11)
+    ax2.set_ylabel('Displacement Change (velocity)', fontsize=11)
+    
+    if x_axis_mode == 'frame':
+        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end}", fontsize=13)
+    else:
+        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end} ({zoom_x_start:.2f}s - {zoom_x_end:.2f}s)", 
+                      fontsize=13)
+    
+    ax2.legend(loc='best', fontsize=9)
+    ax2.grid(True, alpha=0.3)
+    ax2.axhline(y=0, color='r', linestyle='--', alpha=0.5)
     
     plt.tight_layout()
     plt.show()
@@ -180,6 +281,9 @@ def main():
     print(f"\nAnalyzing {len(CONFIG['POINT_PAIRS'])} point pairs")
     print(f"FPS: {CONFIG['FPS']}")
     print(f"Total duration: {len(df) / CONFIG['FPS']:.2f} seconds")
+    print(f"X-axis mode: {CONFIG.get('X_AXIS_MODE', 'time')}")
+    print(f"Zoom duration: Frames {CONFIG['ZOOM_DURATION'][0]}-{CONFIG['ZOOM_DURATION'][1]}")
+    print(f"               ({CONFIG['ZOOM_DURATION'][0]/CONFIG['FPS']:.2f}s - {CONFIG['ZOOM_DURATION'][1]/CONFIG['FPS']:.2f}s)")
     
     # Plot absolute displacements (3D)
     # print("\n" + "=" * 60)
