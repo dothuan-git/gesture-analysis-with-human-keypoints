@@ -2,6 +2,14 @@ import pandas as pd
 import os
 from typing import Tuple
 from tqdm import tqdm
+import utils as utils
+
+# Configuration constants
+CONFIG = {
+    'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
+    'FILE_A': 'data/GX010016_1080_120fps/hands_1.csv',
+    'FILE_B': 'data/GX010016_1080_120fps/hands_2.csv',
+}
 
 def load_csv_files(file_a: str, file_b: str) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Load two CSV files and ensure they have the same structure and frame indices."""
@@ -77,11 +85,12 @@ def main(file_a: str, file_b: str, output_path: str) -> None:
         print(f"Error: {e}")
 
 
-
-
 if __name__ == "__main__":
-    # Example usage
-    FILE_A = "data/GX010016_1080_120fps/hands_1.csv"
-    FILE_B = "data/GX010016_1080_120fps/hands_2.csv"
-    OUTPUT_PATH = "data/merged_hands.csv"
-    main(FILE_A, FILE_B, OUTPUT_PATH)
+    hands_1 = CONFIG['FILE_A']
+    hands_2 = CONFIG['FILE_B']
+    
+    # Create output directory
+    root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+    output_dir = utils.get_latest_or_create(root_path, 'runs')
+
+    main(hands_1, hands_2, output_dir)

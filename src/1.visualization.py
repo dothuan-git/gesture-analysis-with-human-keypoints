@@ -3,15 +3,15 @@ import cv2
 import csv
 import numpy as np
 import mediapipe as mp
-import utils as utils
 from typing import Optional, Tuple
+import utils as utils
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0004.MP4',
+    'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
     'REAL_TIME': False,
-    'SAVE_VIDEO': False,
-    'SAVE_FRAMES': False,
+    'SAVE_VIDEO': True,
+    'SAVE_FRAMES': True,
     'SHOW_FACE_MESH': False
 }
 
@@ -66,13 +66,13 @@ def initialize_video_capture() -> Tuple[cv2.VideoCapture, Tuple[int, int], float
     return cap, (width, height), fps
 
 
-def initialize_video_writer(width: int, height: int, fps: float) -> Optional[cv2.VideoWriter]:
+def initialize_video_writer(width: int, height: int, fps: float, output_dir: str) -> Optional[cv2.VideoWriter]:
     """Initialize video writer if saving is enabled."""
     if not CONFIG['SAVE_VIDEO']:
         return None
-    output_path = utils.get_video_path(prefix='visualized', fps=int(fps))
+    output_path = utils.get_video_path(prefix=output_dir, fps=int(fps))
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    return cv2.VideoWriter(output_path, fourcc, fps, (width, height))
+    return cv2.VideoWriter(output_path, fourcc, fps, (width, height)), output_path
 
 
 def extract_and_write_hand_landmarks(frame_index: int, hands_res, csv_path: str) -> None:
@@ -134,7 +134,6 @@ def process_frame(frame: np.ndarray, hands: mp.solutions.hands.Hands,
 
     # Write hand landmarks to CSV
     hand_csv = f'{output_dir}/hands_1.csv'
-    utils.create_folder_if_not_exist(output_dir)
     extract_and_write_hand_landmarks(frame_idx, hands_res, hand_csv)
 
     # Draw hand landmarks
@@ -169,8 +168,12 @@ def main():
     try:
         hands, face_mesh = initialize_mediapipe()
         cap, (width, height), fps = initialize_video_capture()
-        video_writer = initialize_video_writer(width, height, fps)
-        output_dir = f'data/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+        
+        # Create output directory
+        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+        output_dir = utils.create_incremented_dir(root_path, 'runs')
+
+        video_writer, viz_path = initialize_video_writer(width, height, fps, output_dir)
 
         frame_idx = 0
         while cap.isOpened():
@@ -199,7 +202,7 @@ def main():
         cap.release()
         if video_writer:
             video_writer.release()
-            print(f"Saved output video to: {utils.get_video_path(prefix='visualized', fps=int(fps))}")
+            print(f"Saved output video to: {viz_path}")
         cv2.destroyAllWindows()
         hands.close()
         face_mesh.close()

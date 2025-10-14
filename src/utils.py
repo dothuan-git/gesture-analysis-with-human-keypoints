@@ -1,6 +1,8 @@
 # utils.py
 import cv2
 import os
+from pathlib import Path
+import re
 import datetime
 import supervision as sv
 import numpy as np
@@ -30,7 +32,15 @@ def check_metadata(cap, log=True):
             print("-----------------------------------------")
 
         return width, height, fps, frame_count
-    
+
+
+def set_res(cap, x=1080, y=720, fps=60):
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(x))
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(y))
+    cap.set(cv2.CAP_PROP_FPS, fps)
+    return str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
 
 def get_current_time():
     now = datetime.datetime.now()
@@ -41,10 +51,9 @@ def get_current_time():
 
 def get_video_path(prefix, fps):
     date_now, time_now = get_current_time()
-    directory = f"data/{prefix}"
-    if not os.path.exists(directory):
-        os.makedirs(directory)
-    video_path = f"{directory}/{date_now}_{time_now}[{fps}fps].avi"
+    if not os.path.exists(prefix):
+        os.makedirs(prefix)
+    video_path = f"{prefix}/{date_now}_{time_now}[{fps}fps].avi"
     return video_path
 
 
@@ -54,12 +63,56 @@ def create_folder_if_not_exist(folder_path):
         print(f"Created folder: {folder_path}")
 
 
-def set_res(cap, x=1080, y=720, fps=60):
-    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter.fourcc(*"MJPG"))
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, int(x))
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, int(y))
-    cap.set(cv2.CAP_PROP_FPS, fps)
-    return str(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), str(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+def create_incremented_dir(root: str | Path, prefix: str) -> Path:
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+
+    patt = re.compile(rf"^{re.escape(prefix)}{re.escape('_')}(\d{{{3}}})$")
+
+    # Find current max index
+    current_max = 0
+    for p in root.iterdir():
+        if p.is_dir():
+            m = patt.match(p.name)
+            if m:
+                current_max = max(current_max, int(m.group(1)))
+
+    # Create next available dir; loop handles rare race with another process
+    idx = current_max + 1
+    while True:
+        candidate = root / f"{prefix}_{idx:0{3}d}"
+        try:
+            candidate.mkdir()
+            return candidate
+        except FileExistsError:
+            idx += 1
+
+
+def get_latest_or_create(root: str | Path, prefix: str) -> Path:
+    root = Path(root)
+    patt = re.compile(rf"^{re.escape(prefix)}{re.escape('_')}(\d{{{3}}})$")
+
+    # If root doesn't exist or has no matching dirs, create the first/next one.
+    if not root.exists():
+        return create_incremented_dir(root, prefix)
+
+    latest_path = None
+    latest_idx = 0
+
+    for p in root.iterdir():
+        if p.is_dir():
+            m = patt.match(p.name)
+            if m:
+                idx = int(m.group(1))
+                if idx > latest_idx:
+                    latest_idx = idx
+                    latest_path = p
+
+    if latest_path is None:
+        # No matching directories found -> create one
+        return create_incremented_dir(root, prefix)
+
+    return latest_path
 
 
 def keypoints_visualizer(frame, key_points, edges=None, draw_ids=False, color=sv.Color.GREEN, landmark_ids=None):

@@ -5,15 +5,15 @@ import json
 import supervision as sv
 import mediapipe as mp
 import numpy as np
-import utils as utils
 from typing import Optional, Tuple, List, Set
+import utils as utils
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0004.MP4',
+    'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
     'DETECT_FACE': True,
-    'DETECT_HANDS': False,
-    'SAVE_FRAMES': False,
+    'DETECT_HANDS': True,
+    'SAVE_FRAMES': True,
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
@@ -218,8 +218,9 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
 
 def main():
     """Main function to process video, extract landmarks, and save annotated frames."""
-    output_dir = f'data/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
-    utils.create_folder_if_not_exist(output_dir)
+    # Create output directory
+    root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+    output_dir = utils.create_incremented_dir(root_path, 'runs')
 
     # Load keypoint filter indices
     keypoint_indices = load_keypoint_indices(CONFIG.get('KEYPOINTS_FILTER', []))

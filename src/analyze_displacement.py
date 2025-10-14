@@ -8,14 +8,20 @@ CONFIG = {
     'CSV_PATH': 'data/IMG_0004/face.csv',
     'FPS': 30.0,  # Frames per second of the video
     'POINT_PAIRS': [
-        (0, 17),     # Mouth corners
+        (0, 17),    
     ],
-    'ZOOM_DURATION': [12000, 14000],  # [start_frame, end_frame] for zoomed subplot
-    'X_AXIS_MODE': 'frame',  # 'time' (seconds) or 'frame' (frame numbers)
-    'PLOT_TITLE': 'Facial Keypoint Displacement Over Time',
-    'FIGURE_SIZE': (24, 12),
+    'ZOOM_MODE': 'time',  # 'frame' or 'time' - determines which mode dict to use
+    'TIME_MODE': {
+        'ZOOM_DURATION': [60, 65],  # [start_time, end_time] in seconds
+        'X_AXIS_MODE': 'time',  # Display time on x-axis
+    },
+    'FRAME_MODE': {
+        'ZOOM_DURATION': [10000, 12000],  # [start_frame, end_frame]
+        'X_AXIS_MODE': 'frame',  # Display frame numbers on x-axis
+    },
+    'PLOT_TITLE': 'Facial Keypoint Distance Over Time',
+    'FIGURE_SIZE': (20, 10),
     'SAVE_PLOT': True,
-    'OUTPUT_PATH': 'displacement_plot.png',
 }
 
 
@@ -58,10 +64,10 @@ def extract_point_coords(df: pd.DataFrame, point_id: int, frame_idx: int) -> Tup
     return x, y, z
 
 
-def calculate_displacement_for_pair(df: pd.DataFrame, point_a: int, point_b: int, 
-                                    use_3d: bool = True) -> List[float]:
-    """Calculate displacement between two points for all frames."""
-    displacements = []
+def calculate_distance_for_pair(df: pd.DataFrame, point_a: int, point_b: int, 
+                                use_3d: bool = True) -> List[float]:
+    """Calculate distance between two points for all frames."""
+    distances = []
     
     for frame_idx in range(len(df)):
         try:
@@ -73,12 +79,48 @@ def calculate_displacement_for_pair(df: pd.DataFrame, point_a: int, point_b: int
             else:
                 distance = calculate_2d_distance(x1, y1, x2, y2)
             
-            displacements.append(distance)
+            distances.append(distance)
         except Exception as e:
             print(f"Warning: Error at frame {frame_idx} for pair ({point_a}, {point_b}): {e}")
-            displacements.append(np.nan)
+            distances.append(np.nan)
     
-    return displacements
+    return distances
+
+
+def get_zoom_frames(fps: float, total_frames: int) -> Tuple[int, int]:
+    """Get zoom start and end frames based on ZOOM_MODE."""
+    zoom_mode = CONFIG.get('ZOOM_MODE', 'frame').lower()
+    
+    if zoom_mode == 'time':
+        # Use TIME_MODE dict
+        time_config = CONFIG.get('TIME_MODE', {})
+        zoom_duration = time_config.get('ZOOM_DURATION', [0.0, 1.0])
+        zoom_start = int(zoom_duration[0] * fps)
+        zoom_end = int(zoom_duration[1] * fps)
+    else:
+        # Use FRAME_MODE dict
+        frame_config = CONFIG.get('FRAME_MODE', {})
+        zoom_duration = frame_config.get('ZOOM_DURATION', [0, total_frames])
+        zoom_start = zoom_duration[0]
+        zoom_end = zoom_duration[1]
+    
+    # Validate and clamp values
+    zoom_start = max(0, min(zoom_start, total_frames - 1))
+    zoom_end = max(zoom_start + 1, min(zoom_end, total_frames))
+    
+    return zoom_start, zoom_end
+
+
+def get_x_axis_mode() -> str:
+    """Get X_AXIS_MODE based on ZOOM_MODE."""
+    zoom_mode = CONFIG.get('ZOOM_MODE', 'frame').lower()
+    
+    if zoom_mode == 'time':
+        time_config = CONFIG.get('TIME_MODE', {})
+        return time_config.get('X_AXIS_MODE', 'time').lower()
+    else:
+        frame_config = CONFIG.get('FRAME_MODE', {})
+        return frame_config.get('X_AXIS_MODE', 'frame').lower()
 
 
 def frames_to_time(frames: np.ndarray, fps: float) -> np.ndarray:
@@ -86,9 +128,9 @@ def frames_to_time(frames: np.ndarray, fps: float) -> np.ndarray:
     return frames / fps
 
 
-def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
-                      fps: float, use_3d: bool = True):
-    """Plot displacement for all point pairs over time with zoomed subplot."""
+def plot_distances(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
+                   fps: float, use_3d: bool = True, output_dir: str = '') -> None:
+    """Plot distance between point pairs over time with zoomed subplot."""
     fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
     
     # Create two subplots: full view and zoomed view
@@ -99,7 +141,7 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
     time = frames_to_time(frames, fps)
     
     # Determine x-axis data based on mode
-    x_axis_mode = CONFIG.get('X_AXIS_MODE', 'time').lower()
+    x_axis_mode = get_x_axis_mode()
     if x_axis_mode == 'frame':
         x_data = frames
         x_label = 'Frame Number'
@@ -108,9 +150,7 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
         x_label = 'Time (seconds)'
     
     # Get zoom parameters
-    zoom_start, zoom_end = CONFIG.get('ZOOM_DURATION', [0, len(df)])
-    zoom_start = max(0, min(zoom_start, len(df) - 1))
-    zoom_end = max(zoom_start + 1, min(zoom_end, len(df)))
+    zoom_start, zoom_end = get_zoom_frames(fps, len(df))
     
     if x_axis_mode == 'frame':
         zoom_x_start = zoom_start
@@ -121,23 +161,23 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
     
     for point_a, point_b in point_pairs:
         try:
-            displacements = calculate_displacement_for_pair(df, point_a, point_b, use_3d)
+            distances = calculate_distance_for_pair(df, point_a, point_b, use_3d)
             label = f"Point {point_a} ↔ Point {point_b}"
             
             # Plot full view
-            ax1.plot(x_data, displacements, marker='o', markersize=2, label=label, alpha=0.7)
+            ax1.plot(x_data, distances, marker='o', markersize=2, label=label, alpha=0.7)
             
             # Plot zoomed view
-            ax2.plot(x_data, displacements, marker='o', markersize=3, label=label, alpha=0.7)
+            ax2.plot(x_data, distances, marker='o', markersize=3, label=label, alpha=0.7)
             
             # Print statistics
-            mean_disp = np.nanmean(displacements)
-            std_disp = np.nanstd(displacements)
+            mean_dist = np.nanmean(distances)
+            std_dist = np.nanstd(distances)
             print(f"\n{label}:")
-            print(f"  Mean displacement: {mean_disp:.6f}")
-            print(f"  Std deviation: {std_disp:.6f}")
-            print(f"  Min: {np.nanmin(displacements):.6f}")
-            print(f"  Max: {np.nanmax(displacements):.6f}")
+            print(f"  Mean distance: {mean_dist:.6f}")
+            print(f"  Std deviation: {std_dist:.6f}")
+            print(f"  Min: {np.nanmin(distances):.6f}")
+            print(f"  Max: {np.nanmax(distances):.6f}")
             
         except Exception as e:
             print(f"Error plotting pair ({point_a}, {point_b}): {e}")
@@ -145,7 +185,7 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
     # Configure full view subplot
     dimension = "3D" if use_3d else "2D"
     ax1.set_xlabel(x_label, fontsize=11)
-    ax1.set_ylabel('Displacement (normalized units)', fontsize=11)
+    ax1.set_ylabel('Distance (normalized units)', fontsize=11)
     ax1.set_title(f"{CONFIG['PLOT_TITLE']} ({dimension}) - Full View", fontsize=13)
     ax1.legend(loc='best', fontsize=9)
     ax1.grid(True, alpha=0.3)
@@ -157,29 +197,24 @@ def plot_displacements(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
     # Configure zoomed view subplot
     ax2.set_xlim(zoom_x_start, zoom_x_end)
     ax2.set_xlabel(x_label, fontsize=11)
-    ax2.set_ylabel('Displacement (normalized units)', fontsize=11)
-    
-    if x_axis_mode == 'frame':
-        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end}", fontsize=13)
-    else:
-        ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end} ({zoom_x_start:.2f}s - {zoom_x_end:.2f}s)", 
-                      fontsize=13)
+    ax2.set_ylabel('Distance (normalized units)', fontsize=11)
+    ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end} ({zoom_x_start:.2f}s - {zoom_x_end:.2f}s)", 
+                    fontsize=13)
     
     ax2.legend(loc='best', fontsize=9)
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    
-    if CONFIG['SAVE_PLOT']:
-        plt.savefig(CONFIG['OUTPUT_PATH'], dpi=300, bbox_inches='tight')
-        print(f"\nPlot saved to: {CONFIG['OUTPUT_PATH']}")
+    plot_path = f"{output_dir}/distance_plot_{x_axis_mode} [{zoom_x_start}-{zoom_x_end}].png"
+    plt.savefig(plot_path, dpi=300, bbox_inches='tight')
+    print(f"\nPlot saved to: {plot_path}")
     
     plt.show()
 
 
 def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
                                 fps: float, use_3d: bool = True):
-    """Analyze frame-to-frame displacement changes (velocity) with zoomed subplot."""
+    """Analyze frame-to-frame distance changes (displacement/velocity) with zoomed subplot."""
     fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
     
     # Create two subplots: full view and zoomed view
@@ -190,7 +225,7 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
     time = frames_to_time(frames, fps)
     
     # Determine x-axis data based on mode
-    x_axis_mode = CONFIG.get('X_AXIS_MODE', 'time').lower()
+    x_axis_mode = get_x_axis_mode()
     if x_axis_mode == 'frame':
         x_data = frames
         x_label = 'Frame Number'
@@ -199,9 +234,7 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
         x_label = 'Time (seconds)'
     
     # Get zoom parameters
-    zoom_start, zoom_end = CONFIG.get('ZOOM_DURATION', [0, len(df)])
-    zoom_start = max(0, min(zoom_start, len(df) - 1))
-    zoom_end = max(zoom_start + 1, min(zoom_end, len(df)))
+    zoom_start, zoom_end = get_zoom_frames(fps, len(df))
     
     if x_axis_mode == 'frame':
         zoom_x_start = zoom_start
@@ -212,27 +245,27 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
     
     for point_a, point_b in point_pairs:
         try:
-            displacements = np.array(calculate_displacement_for_pair(df, point_a, point_b, use_3d))
+            distances = np.array(calculate_distance_for_pair(df, point_a, point_b, use_3d))
             
-            # Calculate frame-to-frame change (first derivative)
-            changes = np.diff(displacements)
-            changes = np.insert(changes, 0, 0)  # Add 0 for first frame
+            # Calculate frame-to-frame change (displacement/velocity)
+            displacements = np.diff(distances)
+            displacements = np.insert(displacements, 0, 0)  # Add 0 for first frame
             
             label = f"Point {point_a} ↔ Point {point_b}"
             
             # Plot full view
-            ax1.plot(x_data, changes, marker='o', markersize=2, label=label, alpha=0.7)
+            ax1.plot(x_data, displacements, marker='o', markersize=2, label=label, alpha=0.7)
             
             # Plot zoomed view
-            ax2.plot(x_data, changes, marker='o', markersize=3, label=label, alpha=0.7)
+            ax2.plot(x_data, displacements, marker='o', markersize=3, label=label, alpha=0.7)
             
         except Exception as e:
             print(f"Error analyzing pair ({point_a}, {point_b}): {e}")
     
     # Configure full view subplot
     ax1.set_xlabel(x_label, fontsize=11)
-    ax1.set_ylabel('Displacement Change (velocity)', fontsize=11)
-    ax1.set_title('Frame-to-Frame Displacement Changes - Full View', fontsize=13)
+    ax1.set_ylabel('Displacement (distance change)', fontsize=11)
+    ax1.set_title('Frame-to-Frame Distance Changes (Displacement) - Full View', fontsize=13)
     ax1.legend(loc='best', fontsize=9)
     ax1.grid(True, alpha=0.3)
     ax1.axhline(y=0, color='r', linestyle='--', alpha=0.5)
@@ -244,7 +277,7 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
     # Configure zoomed view subplot
     ax2.set_xlim(zoom_x_start, zoom_x_end)
     ax2.set_xlabel(x_label, fontsize=11)
-    ax2.set_ylabel('Displacement Change (velocity)', fontsize=11)
+    ax2.set_ylabel('Displacement (distance change)', fontsize=11)
     
     if x_axis_mode == 'frame':
         ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end}", fontsize=13)
@@ -261,10 +294,13 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
 
 
 def main():
-    """Main function to analyze and plot keypoint displacements."""
+    """Main function to analyze and plot keypoint distances and displacements."""
     print("=" * 60)
-    print("Facial Keypoint Displacement Analysis")
+    print("Facial Keypoint Distance & Displacement Analysis")
     print("=" * 60)
+
+    output_dir = "/".join(CONFIG['CSV_PATH'].split('/')[:-1])
+    print(f"Output directory: {output_dir}")
     
     # Load data
     df = load_keypoints(CONFIG['CSV_PATH'])
@@ -278,30 +314,48 @@ def main():
         if x_col_b not in df.columns:
             print(f"Warning: Point {point_b} not found in CSV")
     
-    print(f"\nAnalyzing {len(CONFIG['POINT_PAIRS'])} point pairs")
-    print(f"FPS: {CONFIG['FPS']}")
-    print(f"Total duration: {len(df) / CONFIG['FPS']:.2f} seconds")
-    print(f"X-axis mode: {CONFIG.get('X_AXIS_MODE', 'time')}")
-    print(f"Zoom duration: Frames {CONFIG['ZOOM_DURATION'][0]}-{CONFIG['ZOOM_DURATION'][1]}")
-    print(f"               ({CONFIG['ZOOM_DURATION'][0]/CONFIG['FPS']:.2f}s - {CONFIG['ZOOM_DURATION'][1]/CONFIG['FPS']:.2f}s)")
+    zoom_mode = CONFIG.get('ZOOM_MODE', 'frame')
+    x_axis_mode = get_x_axis_mode()
     
-    # Plot absolute displacements (3D)
+    if zoom_mode == 'time':
+        time_config = CONFIG.get('TIME_MODE', {})
+        zoom_duration = time_config.get('ZOOM_DURATION', [0.0, 1.0])
+        print(f"\nAnalyzing {len(CONFIG['POINT_PAIRS'])} point pairs")
+        print(f"FPS: {CONFIG['FPS']}")
+        print(f"Total duration: {len(df) / CONFIG['FPS']:.2f} seconds")
+        print(f"Zoom mode: time")
+        print(f"X-axis mode: {x_axis_mode}")
+        print(f"Zoom duration: {zoom_duration[0]:.2f}s - {zoom_duration[1]:.2f}s")
+        print(f"               (Frames {int(zoom_duration[0]*CONFIG['FPS'])}-{int(zoom_duration[1]*CONFIG['FPS'])})")
+    else:
+        frame_config = CONFIG.get('FRAME_MODE', {})
+        zoom_duration = frame_config.get('ZOOM_DURATION', [0, len(df)])
+        print(f"\nAnalyzing {len(CONFIG['POINT_PAIRS'])} point pairs")
+        print(f"FPS: {CONFIG['FPS']}")
+        print(f"Total duration: {len(df) / CONFIG['FPS']:.2f} seconds")
+        print(f"Zoom mode: frame")
+        print(f"X-axis mode: {x_axis_mode}")
+        print(f"Zoom duration: Frames {zoom_duration[0]}-{zoom_duration[1]}")
+        print(f"               ({zoom_duration[0]/CONFIG['FPS']:.2f}s - {zoom_duration[1]/CONFIG['FPS']:.2f}s)")
+    
+    # Plot absolute distances (3D)
+    print("\n" + "=" * 60)
+    print("3D Distance Analysis")
+    print("=" * 60)
+    plot_distances(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True, output_dir=output_dir)
+    
+    # Optional: Plot 2D distances (x, y only)
     # print("\n" + "=" * 60)
-    # print("3D Displacement Analysis")
+    # print("2D Distance Analysis")
     # print("=" * 60)
-    # plot_displacements(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True)
+    # plot_distances(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=False, output_dir=output_dir)
     
-    # Optional: Plot 2D displacements (x, y only)
-    print("\n" + "=" * 60)
-    print("2D Displacement Analysis")
-    print("=" * 60)
-    plot_displacements(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=False)
-    
-    # Optional: Analyze displacement changes (velocity)
-    print("\n" + "=" * 60)
-    print("Displacement Change Analysis")
-    print("=" * 60)
-    analyze_displacement_changes(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True)
+    # Optional: Analyze displacement (distance changes)
+    # print("\n" + "=" * 60)
+    # print("Displacement Analysis")
+    # print("=" * 60)
+    # analyze_displacement_changes(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True)
+
 
 
 if __name__ == "__main__":
