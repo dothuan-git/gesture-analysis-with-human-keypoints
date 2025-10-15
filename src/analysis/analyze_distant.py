@@ -10,6 +10,7 @@ CONFIG = {
     'POINT_PAIRS': [
         (0, 17),    
     ],
+    'POINTS_PREFIX': 'face',  # Prefix used in CSV columns for keypoints
     'ZOOM_MODE': 'time',  # 'frame' or 'time' - determines which mode dict to use
     'TIME_MODE': {
         'ZOOM_DURATION': [60, 65],  # [start_time, end_time] in seconds
@@ -48,11 +49,11 @@ def calculate_2d_distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
-def extract_point_coords(df: pd.DataFrame, point_id: int, frame_idx: int) -> Tuple[float, float, float]:
+def extract_point_coords(df: pd.DataFrame, point_id: int, prefix: str, frame_idx: int) -> Tuple[float, float, float]:
     """Extract x, y, z coordinates for a specific point and frame."""
-    x_col = f'face_{point_id}_x'
-    y_col = f'face_{point_id}_y'
-    z_col = f'face_{point_id}_z'
+    x_col = f'{prefix}_{point_id}_x'
+    y_col = f'{prefix}_{point_id}_y'
+    z_col = f'{prefix}_{point_id}_z'
     
     if x_col not in df.columns or y_col not in df.columns or z_col not in df.columns:
         raise ValueError(f"Point {point_id} not found in CSV columns")
@@ -65,14 +66,14 @@ def extract_point_coords(df: pd.DataFrame, point_id: int, frame_idx: int) -> Tup
 
 
 def calculate_distance_for_pair(df: pd.DataFrame, point_a: int, point_b: int, 
-                                use_3d: bool = True) -> List[float]:
+                                prefix: str, use_3d: bool = True) -> List[float]:
     """Calculate distance between two points for all frames."""
     distances = []
     
     for frame_idx in range(len(df)):
         try:
-            x1, y1, z1 = extract_point_coords(df, point_a, frame_idx)
-            x2, y2, z2 = extract_point_coords(df, point_b, frame_idx)
+            x1, y1, z1 = extract_point_coords(df, point_a, prefix, frame_idx)
+            x2, y2, z2 = extract_point_coords(df, point_b, prefix, frame_idx)
             
             if use_3d:
                 distance = calculate_euclidean_distance(x1, y1, z1, x2, y2, z2)
@@ -128,7 +129,7 @@ def frames_to_time(frames: np.ndarray, fps: float) -> np.ndarray:
     return frames / fps
 
 
-def plot_distances(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
+def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, int]],
                    fps: float, use_3d: bool = True, output_dir: str = '') -> None:
     """Plot distance between point pairs over time with zoomed subplot."""
     fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
@@ -161,7 +162,7 @@ def plot_distances(df: pd.DataFrame, point_pairs: List[Tuple[int, int]],
     
     for point_a, point_b in point_pairs:
         try:
-            distances = calculate_distance_for_pair(df, point_a, point_b, use_3d)
+            distances = calculate_distance_for_pair(df, point_a, point_b, prefix, use_3d)
             label = f"Point {point_a} ↔ Point {point_b}"
             
             # Plot full view
@@ -306,9 +307,10 @@ def main():
     df = load_keypoints(CONFIG['CSV_PATH'])
     
     # Validate point pairs
+    points_prefix = CONFIG['POINTS_PREFIX']
     for point_a, point_b in CONFIG['POINT_PAIRS']:
-        x_col_a = f'face_{point_a}_x'
-        x_col_b = f'face_{point_b}_x'
+        x_col_a = f'{points_prefix}_{point_a}_x'
+        x_col_b = f'{points_prefix}_{point_b}_x'
         if x_col_a not in df.columns:
             print(f"Warning: Point {point_a} not found in CSV")
         if x_col_b not in df.columns:
@@ -342,13 +344,13 @@ def main():
     print("\n" + "=" * 60)
     print("3D Distance Analysis")
     print("=" * 60)
-    plot_distances(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True, output_dir=output_dir)
+    plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True, output_dir=output_dir)
     
     # Optional: Plot 2D distances (x, y only)
     # print("\n" + "=" * 60)
     # print("2D Distance Analysis")
     # print("=" * 60)
-    # plot_distances(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=False, output_dir=output_dir)
+    # plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=False, output_dir=output_dir)
     
     # Optional: Analyze displacement (distance changes)
     # print("\n" + "=" * 60)

@@ -216,8 +216,7 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                                            dtype=np.float32)
                     
                     # Create landmark IDs list (0-20)
-                    hand_landmark_ids = list(range(21))
-                    
+                    hand_landmark_ids = list(range(21)) 
                     annotated_frame = keypoints_visualizer(
                         annotated_frame, 
                         keypoints_xy,

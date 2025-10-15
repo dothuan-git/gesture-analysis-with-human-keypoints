@@ -153,7 +153,7 @@ def keypoints_visualizer(frame, keypoints_xy, edges=None, draw_ids=False, color=
     # Draw keypoints (circles)
     for idx, (x, y) in enumerate(xy):
         center = (int(x), int(y))
-        cv2.circle(annotated_frame, center, radius=3, color=color, thickness=-1)
+        cv2.circle(annotated_frame, center, radius=2, color=color, thickness=-1)
     
     # Draw IDs above each point
     if draw_ids:
