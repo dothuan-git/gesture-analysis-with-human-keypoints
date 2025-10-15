@@ -2,23 +2,28 @@ import os
 import cv2
 import csv
 import json
-import supervision as sv
 import mediapipe as mp
 import numpy as np
 from typing import Optional, Tuple, List, Set
-import utils as utils
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from src.utils import *
+
 
 # Configuration constants
 CONFIG = {
     'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
-    'DETECT_FACE': True,
+    'OUTPUT_PATH': '',
+    'DETECT_FACE': False,
     'DETECT_HANDS': True,
-    'SAVE_FRAMES': True,
+    'SAVE_FRAMES': False,
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
-    'DRAW_KEYPOINT_IDS': False,
+    'DRAW_KEYPOINT_IDS': True,
 }
+HAND_CONNECTIONS = load_hand_connections()
 
 
 def load_keypoint_indices(filter_keys: List[str]) -> Optional[Set[int]]:
@@ -66,7 +71,7 @@ def initialize_video_capture() -> Tuple[cv2.VideoCapture, Tuple[int, int]]:
     cap = cv2.VideoCapture(CONFIG['VIDEO_PATH'])
     if not cap.isOpened():
         raise RuntimeError("Failed to open video file")
-    utils.check_metadata(cap)
+    check_metadata(cap)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     return cap, (width, height)
@@ -151,7 +156,6 @@ def extract_and_write_hand_landmarks(frame_index: int, hand_result, csv_path: st
 def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int, 
                  output_dir: str, keypoint_indices: Optional[Set[int]] = None) -> np.ndarray:
     """Process a frame for face and hand detection, visualization, and data extraction."""
-    # frame = cv2.flip(frame, 1)
     annotated_frame = frame.copy()
     mediapipe_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     draw_ids = CONFIG.get('DRAW_KEYPOINT_IDS', False)
@@ -177,17 +181,18 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                 sorted_indices = sorted(keypoint_indices)
                 filtered_xy = np.array([[landmarks[i].x * width, landmarks[i].y * height] 
                                        for i in sorted_indices],
-                                      dtype=np.float32).reshape(1, -1, 2)
-                filtered_confidence = np.ones((1, len(filtered_xy[0])))
-                face_keypoints = sv.KeyPoints(xy=filtered_xy, confidence=filtered_confidence)
-                # Pass original landmark IDs to visualizer
-                annotated_frame = utils.keypoints_visualizer(
-                    annotated_frame, face_keypoints, draw_ids=draw_ids, landmark_ids=sorted_indices
+                                      dtype=np.float32)
+                # Pass as numpy array directly
+                annotated_frame = keypoints_visualizer(
+                    annotated_frame, filtered_xy, draw_ids=draw_ids, landmark_ids=sorted_indices
                 )
             else:
                 # Visualize all keypoints
-                face_keypoints = sv.KeyPoints.from_mediapipe(face_result, (width, height))
-                annotated_frame = utils.keypoints_visualizer(annotated_frame, face_keypoints)
+                if face_result.face_landmarks:
+                    landmarks = face_result.face_landmarks[0]
+                    face_xy = np.array([[lm.x * width, lm.y * height] for lm in landmarks],
+                                      dtype=np.float32)
+                    annotated_frame = keypoints_visualizer(annotated_frame, face_xy, draw_ids=draw_ids)
 
     # Hand detection and processing
     if CONFIG['DETECT_HANDS']:
@@ -204,11 +209,23 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
             if hand_result.hand_landmarks:
                 for i, landmarks in enumerate(hand_result.hand_landmarks):
                     handedness = hand_result.handedness[i][0].display_name.lower()
-                    color = sv.Color.RED if handedness == "left" else sv.Color.GREEN  # Swap colors
+                    color = (0, 0, 255) if handedness == "left" else (0, 255, 0)  # BGR: Red for left, Green for right
+                    
+                    # Convert to numpy array
                     keypoints_xy = np.array([[lm.x * width, lm.y * height] for lm in landmarks],
-                                           dtype=np.float32).reshape(1, -1, 2)
-                    hand_keypoints = sv.KeyPoints(xy=keypoints_xy, confidence=np.ones((1, len(landmarks))))
-                    annotated_frame = utils.keypoints_visualizer(annotated_frame, hand_keypoints, draw_ids=draw_ids, color=color)
+                                           dtype=np.float32)
+                    
+                    # Create landmark IDs list (0-20)
+                    hand_landmark_ids = list(range(21))
+                    
+                    annotated_frame = keypoints_visualizer(
+                        annotated_frame, 
+                        keypoints_xy,
+                        edges=HAND_CONNECTIONS,
+                        draw_ids=draw_ids, 
+                        color=color,
+                        landmark_ids=hand_landmark_ids
+                    )
 
     # Add frame index text
     cv2.putText(annotated_frame, f"Frame: {frame_idx}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
@@ -219,8 +236,10 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
 def main():
     """Main function to process video, extract landmarks, and save annotated frames."""
     # Create output directory
-    root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
-    output_dir = utils.create_incremented_dir(root_path, 'runs')
+    output_dir = CONFIG["OUTPUT_PATH"]
+    if not os.path.exists(output_dir) or len(output_dir) == 0:
+        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+        output_dir = create_incremented_dir(root_path, 'runs')
 
     # Load keypoint filter indices
     keypoint_indices = load_keypoint_indices(CONFIG.get('KEYPOINTS_FILTER', []))
@@ -244,7 +263,7 @@ def main():
             # Save annotated frame
             if CONFIG['SAVE_FRAMES']:
                 frames_dir = f'{output_dir}/frames_2'
-                utils.create_folder_if_not_exist(frames_dir)
+                create_folder_if_not_exist(frames_dir)
                 cv2.imwrite(f'{frames_dir}/{frame_idx}.jpg', annotated_frame)
 
             cv2.imshow('Press Q to quit...', annotated_frame)

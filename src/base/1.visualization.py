@@ -4,14 +4,18 @@ import csv
 import numpy as np
 import mediapipe as mp
 from typing import Optional, Tuple
-import utils as utils
+
+import sys
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from src.utils import *
 
 # Configuration constants
 CONFIG = {
     'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
+    'OUTPUT_PATH': 'workspaces/GX010016_1080_120fps/runs_006',
     'REAL_TIME': False,
-    'SAVE_VIDEO': True,
-    'SAVE_FRAMES': True,
+    'SAVE_VIDEO': False,
+    'SAVE_FRAMES': False,
     'SHOW_FACE_MESH': False
 }
 
@@ -56,9 +60,9 @@ def initialize_video_capture() -> Tuple[cv2.VideoCapture, Tuple[int, int], float
         raise RuntimeError("Failed to open video source")
     
     if CONFIG['REAL_TIME']:
-        utils.set_res(cap)
+        set_res(cap)
     else:
-        utils.check_metadata(cap)
+        check_metadata(cap)
     
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -70,7 +74,7 @@ def initialize_video_writer(width: int, height: int, fps: float, output_dir: str
     """Initialize video writer if saving is enabled."""
     if not CONFIG['SAVE_VIDEO']:
         return None
-    output_path = utils.get_video_path(prefix=output_dir, fps=int(fps))
+    output_path = get_video_path(prefix=output_dir, fps=int(fps))
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     return cv2.VideoWriter(output_path, fourcc, fps, (width, height)), output_path
 
@@ -170,8 +174,10 @@ def main():
         cap, (width, height), fps = initialize_video_capture()
         
         # Create output directory
-        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
-        output_dir = utils.create_incremented_dir(root_path, 'runs')
+        output_dir = CONFIG["OUTPUT_PATH"]
+        if not os.path.exists(output_dir) or len(output_dir) == 0:
+            root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+            output_dir = create_incremented_dir(root_path, 'runs')
 
         video_writer, viz_path = initialize_video_writer(width, height, fps, output_dir)
 
@@ -188,7 +194,7 @@ def main():
                 video_writer.write(annotated)
             if CONFIG['SAVE_FRAMES']:
                 frames_dir = f'{output_dir}/frames_1'
-                utils.create_folder_if_not_exist(frames_dir)
+                create_folder_if_not_exist(frames_dir)
                 cv2.imwrite(f'{frames_dir}/{frame_idx}.jpg', annotated)
 
             if cv2.waitKey(1) & 0xFF == ord('q'):

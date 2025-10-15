@@ -1,10 +1,11 @@
 # utils.py
 import cv2
 import os
-from pathlib import Path
 import re
+import json
 import datetime
-import supervision as sv
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 import mediapipe as mp
@@ -115,21 +116,48 @@ def get_latest_or_create(root: str | Path, prefix: str) -> Path:
     return latest_path
 
 
-def keypoints_visualizer(frame, key_points, edges=None, draw_ids=False, color=sv.Color.GREEN, landmark_ids=None):
+def load_hand_connections(json_path='hand_connections.json'):
+    """Load hand connections from JSON file."""
+    with open(json_path, 'r') as f:
+        data = json.load(f)
+    return [tuple(conn) for conn in data['connections']]
+
+
+def keypoints_visualizer(frame, keypoints_xy, edges=None, draw_ids=False, color=(0, 255, 0), landmark_ids=None):
+    """
+    Visualize keypoints and skeleton connections using pure OpenCV.
+    """
     annotated_frame = frame.copy()
-
-    # Draw points thicker in specified color
-    vertex_annotator = sv.VertexAnnotator(color=color, radius=2)
-    annotated_frame = vertex_annotator.annotate(scene=annotated_frame, key_points=key_points)
-
-    # Draw skeleton thinner in red
+    
+    # Handle both numpy array and sv.KeyPoints object
+    if hasattr(keypoints_xy, 'xy'):
+        # It's a sv.KeyPoints object
+        xy = keypoints_xy.xy[0]  # shape: (num_points, 2)
+    else:
+        # It's already a numpy array
+        xy = keypoints_xy
+    
+    # Ensure xy is the right shape
+    if len(xy.shape) == 3:
+        xy = xy[0]  # Remove batch dimension if present
+    
+    # Draw skeleton edges first (so they appear behind points)
     if edges is not None:
-        edge_annotator = sv.EdgeAnnotator(color=sv.Color.RED, thickness=1, edges=edges)
-        annotated_frame = edge_annotator.annotate(scene=annotated_frame, key_points=key_points)
-
-    # Draw ids above each point
+        skeleton_color = (255, 255, 255)
+        for start_idx, end_idx in edges:
+            if start_idx < len(xy) and end_idx < len(xy):
+                start_point = tuple(xy[start_idx].astype(int))
+                end_point = tuple(xy[end_idx].astype(int))
+                cv2.line(annotated_frame, start_point, end_point, skeleton_color, thickness=1)
+    
+    # Draw keypoints (circles)
+    for idx, (x, y) in enumerate(xy):
+        center = (int(x), int(y))
+        cv2.circle(annotated_frame, center, radius=3, color=color, thickness=-1)
+    
+    # Draw IDs above each point
     if draw_ids:
-        xy = key_points.xy[0]  # shape: (num_points, 2)
+        text_color = (255, 255, 0)
         for idx, (x, y) in enumerate(xy):
             # Use original landmark ID if provided, otherwise use array index
             label = str(landmark_ids[idx]) if landmark_ids is not None else str(idx)
@@ -138,12 +166,12 @@ def keypoints_visualizer(frame, key_points, edges=None, draw_ids=False, color=sv
                 label,
                 (int(x), int(y) - 5),
                 cv2.FONT_HERSHEY_SIMPLEX,
-                0.3,
-                (255, 70, 0),
+                0.4,
+                text_color,
                 1,
                 cv2.LINE_AA
             )
-
+    
     return annotated_frame
 
 
