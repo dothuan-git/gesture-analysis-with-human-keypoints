@@ -13,15 +13,15 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
+    'VIDEO_PATH': 'assets/IMG_0004.MP4',
     'OUTPUT_PATH': '',
-    'DETECT_FACE': False,
-    'DETECT_HANDS': True,
+    'DETECT_FACE': True,
+    'DETECT_HANDS': False,
     'SAVE_FRAMES': False,
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
-    'DRAW_KEYPOINT_IDS': True,
+    'DRAW_KEYPOINT_IDS': False,
 }
 HAND_CONNECTIONS = load_hand_connections()
 

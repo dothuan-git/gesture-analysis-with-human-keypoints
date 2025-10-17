@@ -7,13 +7,14 @@ from typing import List, Tuple
 CONFIG = {
     'CSV_PATH': 'data/IMG_0004/face.csv',
     'FPS': 30.0,  # Frames per second of the video
+    'RESOLUTION': (720, 1280),  # (width, height) in pixels - CHANGE THIS TO YOUR VIDEO RESOLUTION
     'POINT_PAIRS': [
         (0, 17),    
     ],
     'POINTS_PREFIX': 'face',  # Prefix used in CSV columns for keypoints
     'ZOOM_MODE': 'time',  # 'frame' or 'time' - determines which mode dict to use
     'TIME_MODE': {
-        'ZOOM_DURATION': [397, 400],  # [start_time, end_time] in seconds
+        'ZOOM_DURATION': [617, 622],  # [start_time, end_time] in seconds
         'X_AXIS_MODE': 'time',  # Display time on x-axis
     },
     'FRAME_MODE': {
@@ -49,6 +50,28 @@ def calculate_2d_distance(x1: float, y1: float, x2: float, y2: float) -> float:
     return np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
 
+def calculate_2d_distance_pixels(x1: float, y1: float, x2: float, y2: float, 
+                                  width: int, height: int) -> float:
+    """Calculate 2D Euclidean distance in pixels.
+    
+    Args:
+        x1, y1: Normalized coordinates of first point (0-1 range)
+        x2, y2: Normalized coordinates of second point (0-1 range)
+        width: Video width in pixels
+        height: Video height in pixels
+    
+    Returns:
+        Distance in pixels
+    """
+    # Convert normalized coordinates to pixels
+    x1_px = x1 * width
+    y1_px = y1 * height
+    x2_px = x2 * width
+    y2_px = y2 * height
+    
+    return np.sqrt((x2_px - x1_px)**2 + (y2_px - y1_px)**2)
+
+
 def extract_point_coords(df: pd.DataFrame, point_id: int, prefix: str, frame_idx: int) -> Tuple[float, float, float]:
     """Extract x, y, z coordinates for a specific point and frame."""
     x_col = f'{prefix}_{point_id}_x'
@@ -66,8 +89,17 @@ def extract_point_coords(df: pd.DataFrame, point_id: int, prefix: str, frame_idx
 
 
 def calculate_distance_for_pair(df: pd.DataFrame, point_a: int, point_b: int, 
-                                prefix: str, use_3d: bool = True) -> List[float]:
-    """Calculate distance between two points for all frames."""
+                                prefix: str, use_3d: bool = True, 
+                                resolution: Tuple[int, int] = None) -> List[float]:
+    """Calculate distance between two points for all frames.
+    
+    Args:
+        df: DataFrame with keypoint data
+        point_a, point_b: Point indices
+        prefix: Column prefix
+        use_3d: If True, use 3D distance, else 2D
+        resolution: (width, height) tuple for pixel conversion. If provided, 2D distances are in pixels.
+    """
     distances = []
     
     for frame_idx in range(len(df)):
@@ -78,7 +110,12 @@ def calculate_distance_for_pair(df: pd.DataFrame, point_a: int, point_b: int,
             if use_3d:
                 distance = calculate_euclidean_distance(x1, y1, z1, x2, y2, z2)
             else:
-                distance = calculate_2d_distance(x1, y1, x2, y2)
+                # If resolution is provided, calculate distance in pixels
+                if resolution is not None:
+                    width, height = resolution
+                    distance = calculate_2d_distance_pixels(x1, y1, x2, y2, width, height)
+                else:
+                    distance = calculate_2d_distance(x1, y1, x2, y2)
             
             distances.append(distance)
         except Exception as e:
@@ -130,7 +167,8 @@ def frames_to_time(frames: np.ndarray, fps: float) -> np.ndarray:
 
 
 def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, int]],
-                   fps: float, use_3d: bool = True, output_dir: str = '') -> None:
+                   fps: float, use_3d: bool = True, output_dir: str = '', 
+                   resolution: Tuple[int, int] = None) -> None:
     """Plot distance between point pairs over time with zoomed subplot."""
     fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
     
@@ -160,9 +198,21 @@ def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, i
         zoom_x_start = zoom_start / fps
         zoom_x_end = zoom_end / fps
     
+    # Determine y-axis label based on mode
+    if use_3d:
+        y_label = 'Distance (normalized units)'
+        dimension = "3D"
+    else:
+        if resolution is not None:
+            y_label = 'Distance (pixels)'
+            dimension = "2D (pixels)"
+        else:
+            y_label = 'Distance (normalized units)'
+            dimension = "2D"
+    
     for point_a, point_b in point_pairs:
         try:
-            distances = calculate_distance_for_pair(df, point_a, point_b, prefix, use_3d)
+            distances = calculate_distance_for_pair(df, point_a, point_b, prefix, use_3d, resolution)
             label = f"Point {point_a} ↔ Point {point_b}"
             
             # Plot full view
@@ -184,9 +234,8 @@ def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, i
             print(f"Error plotting pair ({point_a}, {point_b}): {e}")
     
     # Configure full view subplot
-    dimension = "3D" if use_3d else "2D"
     ax1.set_xlabel(x_label, fontsize=11)
-    ax1.set_ylabel('Distance (normalized units)', fontsize=11)
+    ax1.set_ylabel(y_label, fontsize=11)
     ax1.set_title(f"{CONFIG['PLOT_TITLE']} ({dimension}) - Full View", fontsize=13)
     ax1.legend(loc='best', fontsize=9)
     ax1.grid(True, alpha=0.3)
@@ -198,7 +247,7 @@ def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, i
     # Configure zoomed view subplot
     ax2.set_xlim(zoom_x_start, zoom_x_end)
     ax2.set_xlabel(x_label, fontsize=11)
-    ax2.set_ylabel('Distance (normalized units)', fontsize=11)
+    ax2.set_ylabel(y_label, fontsize=11)
     ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end} ({zoom_x_start:.2f}s - {zoom_x_end:.2f}s)", 
                     fontsize=13)
     
@@ -206,7 +255,9 @@ def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, i
     ax2.grid(True, alpha=0.3)
     
     plt.tight_layout()
-    plot_path = f"{output_dir}/distance_plot_{x_axis_mode} [{zoom_x_start}-{zoom_x_end}].png"
+    
+    suffix = "pixels" if (not use_3d and resolution is not None) else x_axis_mode
+    plot_path = f"{output_dir}/distance_plot_{suffix} [{zoom_x_start}-{zoom_x_end}].png"
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     print(f"\nPlot saved to: {plot_path}")
     
@@ -214,7 +265,7 @@ def plot_distances(df: pd.DataFrame, prefix: str, point_pairs: List[Tuple[int, i
 
 
 def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, int]], 
-                                fps: float, use_3d: bool = True):
+                                fps: float, use_3d: bool = True, resolution: Tuple[int, int] = None):
     """Analyze frame-to-frame distance changes (displacement/velocity) with zoomed subplot."""
     fig = plt.figure(figsize=CONFIG['FIGURE_SIZE'])
     
@@ -244,9 +295,19 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
         zoom_x_start = zoom_start / fps
         zoom_x_end = zoom_end / fps
     
+    # Determine y-axis label
+    if use_3d:
+        y_label = 'Displacement (distance change)'
+    else:
+        if resolution is not None:
+            y_label = 'Displacement (pixels per frame)'
+        else:
+            y_label = 'Displacement (distance change)'
+    
     for point_a, point_b in point_pairs:
         try:
-            distances = np.array(calculate_distance_for_pair(df, point_a, point_b, use_3d))
+            distances = np.array(calculate_distance_for_pair(df, point_a, point_b, 
+                                                             CONFIG['POINTS_PREFIX'], use_3d, resolution))
             
             # Calculate frame-to-frame change (displacement/velocity)
             displacements = np.diff(distances)
@@ -265,7 +326,7 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
     
     # Configure full view subplot
     ax1.set_xlabel(x_label, fontsize=11)
-    ax1.set_ylabel('Displacement (distance change)', fontsize=11)
+    ax1.set_ylabel(y_label, fontsize=11)
     ax1.set_title('Frame-to-Frame Distance Changes (Displacement) - Full View', fontsize=13)
     ax1.legend(loc='best', fontsize=9)
     ax1.grid(True, alpha=0.3)
@@ -278,7 +339,7 @@ def analyze_displacement_changes(df: pd.DataFrame, point_pairs: List[Tuple[int, 
     # Configure zoomed view subplot
     ax2.set_xlim(zoom_x_start, zoom_x_end)
     ax2.set_xlabel(x_label, fontsize=11)
-    ax2.set_ylabel('Displacement (distance change)', fontsize=11)
+    ax2.set_ylabel(y_label, fontsize=11)
     
     if x_axis_mode == 'frame':
         ax2.set_title(f"Zoomed View: Frames {zoom_start}-{zoom_end}", fontsize=13)
@@ -305,6 +366,11 @@ def main():
     
     # Load data
     df = load_keypoints(CONFIG['CSV_PATH'])
+    
+    # Get resolution from config
+    resolution = CONFIG.get('RESOLUTION')
+    if resolution:
+        print(f"Video resolution: {resolution[0]}x{resolution[1]} pixels")
     
     # Validate point pairs
     points_prefix = CONFIG['POINTS_PREFIX']
@@ -341,22 +407,25 @@ def main():
         print(f"               ({zoom_duration[0]/CONFIG['FPS']:.2f}s - {zoom_duration[1]/CONFIG['FPS']:.2f}s)")
     
     # Plot absolute distances (3D)
-    print("\n" + "=" * 60)
-    print("3D Distance Analysis")
-    print("=" * 60)
-    plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True, output_dir=output_dir)
-    
-    # Optional: Plot 2D distances (x, y only)
     # print("\n" + "=" * 60)
-    # print("2D Distance Analysis")
+    # print("3D Distance Analysis")
     # print("=" * 60)
-    # plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=False, output_dir=output_dir)
+    # plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], 
+    #                use_3d=True, output_dir=output_dir)
+    
+    # Plot 2D distances in pixels
+    print("\n" + "=" * 60)
+    print("2D Distance Analysis (in pixels)")
+    print("=" * 60)
+    plot_distances(df, points_prefix, CONFIG['POINT_PAIRS'], CONFIG['FPS'], 
+                   use_3d=False, output_dir=output_dir, resolution=resolution)
     
     # Optional: Analyze displacement (distance changes)
     # print("\n" + "=" * 60)
-    # print("Displacement Analysis")
+    # print("Displacement Analysis (in pixels)")
     # print("=" * 60)
-    # analyze_displacement_changes(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], use_3d=True)
+    # analyze_displacement_changes(df, CONFIG['POINT_PAIRS'], CONFIG['FPS'], 
+    #                              use_3d=False, resolution=resolution)
 
 
 

@@ -15,7 +15,7 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'workspaces/IMG_0004/chunks_001/segment_1.mp4',
+    'VIDEO_PATH': 'workspaces/IMG_0004/chunks_001/IMG_0004_segment16.mp4',
     'OUTPUT_PATH': '',
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
@@ -24,7 +24,7 @@ CONFIG = {
         (0, 17),
     ],  # List of (landmark_id1, landmark_id2) pairs to measure distance
     'PLOT_HISTORY_LENGTH': 300,  # Number of frames to show in plot
-    'PLOT_SIZE': (1200, 600),  # Plot size in pixels (width, height)
+    'PLOT_SIZE': (16, 6),  # Plot size in pixels (width, height)
     'SAVE_FRAMES_WITH_PLOT': False,  # Save frames with plot side-by-side
     'DRAW_KEYPOINT_IDS': False,
 }
@@ -99,13 +99,13 @@ def create_distance_plot(distance_history: Dict[Tuple[int, int], deque],
     plt.switch_backend('Agg')
     
     plot_width, plot_height = CONFIG['PLOT_SIZE']
-    fig, ax = plt.subplots(figsize=(plot_width/100, plot_height/100), dpi=100)
+    fig, ax = plt.subplots(figsize=(plot_width, plot_height), dpi=100)
     
     # Plot each landmark pair
     colors = plt.cm.tab10(np.linspace(0, 1, len(distance_history)))
     for i, (pair, history) in enumerate(distance_history.items()):
         frames = list(range(max(0, frame_idx - len(history) + 1), frame_idx + 1))
-        ax.plot(frames, list(history), label=f'Pair {pair[0]}-{pair[1]}', 
+        ax.plot(frames, list(history), label=f'Pair {pair[0]}-{pair[1]}', marker='o', 
                 color=colors[i], linewidth=2)
     
     ax.set_xlabel('Frame', fontsize=10)
@@ -118,6 +118,7 @@ def create_distance_plot(distance_history: Dict[Tuple[int, int], deque],
     ax.relim()
     ax.autoscale_view()
     # ax.set_ylim(50, 100)
+    plt.tight_layout()
     
     # Convert plot to image
     fig.canvas.draw()
@@ -287,10 +288,16 @@ def main():
 
             frame_idx += 1
 
+        # Save the last plot
+        if distance_history:
+            last_plot = create_distance_plot(distance_history, frame_idx - 1)
+            cv2.imwrite(f'{output_dir}/last_plot.jpg', last_plot)
+
     except Exception as e:
         print(f"Error: {e}")
         import traceback
         traceback.print_exc()
+
     finally:
         cap.release()
         cv2.destroyAllWindows()
