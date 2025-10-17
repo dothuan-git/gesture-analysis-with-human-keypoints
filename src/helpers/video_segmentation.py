@@ -137,8 +137,9 @@ def cut_video_segment(video_path, start_time, end_time, output_path, fps, paddin
 def main():
     # Create output directory
     output_dir = CONFIG["OUTPUT_DIR"]
+    video_name = CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]
     if not os.path.exists(output_dir) or len(output_dir) == 0:
-        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+        root_path = f'workspaces/{video_name}'
         output_dir = create_incremented_dir(root_path, 'chunks')
     
     # Create log file for all print statements
@@ -195,7 +196,7 @@ def main():
     # Process each segment
     for idx, row in df_segments.iterrows():
         segment_id = row['segment_id']
-        segment_name = f"segment_{segment_id}"
+        segment_name = f"{video_name}_segment{segment_id}"
         category = row['category']
         start_seconds = row['start_seconds']
         end_seconds = row['end_seconds']
