@@ -11,7 +11,7 @@ CONFIG = {
     'VIDEO_PATH': 'assets/IMG_0004.MP4',
     'CSV_PATH': 'data/FURUKAWA-PilotExp.xlsx',
     'OUTPUT_DIR': '',
-    'PADDING_SECONDS': 0,  # Number of seconds to pad before and after each segment
+    'PADDING_SECONDS': 1,  # Number of seconds to pad before and after each segment
 }
 
 
@@ -141,11 +141,29 @@ def main():
         root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
         output_dir = create_incremented_dir(root_path, 'chunks')
     
+    # Create log file for all print statements
+    log_file_path = os.path.join(output_dir, 'processing_output.txt')
+    log_file = open(log_file_path, 'w', encoding='utf-8')
+    
+    def emit(message):
+        """Print to console and write to log file"""
+        print(message)
+        log_file.write(message + '\n')
+        log_file.flush()
+    
     # Read CSV or XLSX file
-    print(f"Reading file: {CONFIG['CSV_PATH']}")
-    df = read_file(CONFIG['CSV_PATH'])
-    df.columns = df.columns.str.lower()
-    df_segments = df[['start', 'end', 'category']].copy()
+    emit(f"Reading file: {CONFIG['CSV_PATH']}")
+    df_original = read_file(CONFIG['CSV_PATH'])
+    
+    # Store original column names before lowercasing
+    original_columns = df_original.columns.tolist()
+    
+    # Lower case column names for processing
+    df_original.columns = df_original.columns.str.lower()
+    
+    # Extract required columns and keep track of original indices
+    df_segments = df_original[['start', 'end', 'category']].copy()
+    df_segments['original_index'] = df_original.index
     
     # Convert time strings to seconds
     df_segments['start_seconds'] = df_segments['start'].apply(time_to_seconds)
@@ -154,36 +172,45 @@ def main():
     # Remove rows with empty start or end times
     df_segments = df_segments.dropna(subset=['start_seconds', 'end_seconds'])
     
-    # Sort by start time
+    # Sort by start time and create new index for segment IDs
     df_segments = df_segments.sort_values('start_seconds').reset_index(drop=True)
+    df_segments['segment_id'] = df_segments.index + 1
     
     # Open video to get properties
     cap = cv2.VideoCapture(CONFIG['VIDEO_PATH'])
     fps = cap.get(cv2.CAP_PROP_FPS)
+    max_frame = cap.get(cv2.CAP_PROP_FRAME_COUNT)
     cap.release()
     
     padding_seconds = CONFIG.get('PADDING_SECONDS', 0)
     
-    print(f"Video FPS: {fps}")
-    print(f"Padding: {padding_seconds} seconds before and after each segment")
-    print(f"Processing {len(df_segments)} segments...\n")
+    emit(f"Video FPS: {fps}")
+    emit(f"Padding: {padding_seconds} seconds before and after each segment")
+    emit(f"\nProcessing {len(df_segments)} segments...")
     
     # Initialize log data
-    log_data = []
+    processing_log_data = []
+    segments_log_data = []
     
     # Process each segment
     for idx, row in df_segments.iterrows():
+        segment_id = row['segment_id']
+        segment_name = f"segment_{segment_id}"
         category = row['category']
         start_seconds = row['start_seconds']
         end_seconds = row['end_seconds']
         duration = end_seconds - start_seconds
+        original_start = row['start']
+        original_end = row['end']
         
         # Create output filename
-        output_filename = f"{category}_[{int(start_seconds)}s-{int(end_seconds)}s] pad_{padding_seconds}s.mp4"
+        output_filename = f"{segment_name}.mp4"
         output_path = os.path.join(output_dir, output_filename)
         
-        print(f"Processing segment {idx + 1}: {category} ({start_seconds}s - {end_seconds}s) - pad: {padding_seconds}s")
-        
+        emit(f"- {segment_name}: {category} [{start_seconds}s - {end_seconds}s] - duration: {duration:.2f}s")
+        if padding_seconds > 0:
+            emit(f"  (with padding {padding_seconds}s: {max(0, start_seconds - padding_seconds)}s - {min(end_seconds + padding_seconds, max_frame/fps)}s)")
+
         # Cut video segment with padding
         start_frame, end_frame = cut_video_segment(
             CONFIG['VIDEO_PATH'],
@@ -194,28 +221,57 @@ def main():
             padding_seconds=padding_seconds
         )
         
-        # Add to log
-        log_data.append({
+        # Get all original columns for this row (using original index)
+        original_row_index = row['original_index']
+        original_row_data = df_original.loc[original_row_index].to_dict()
+        
+        # Create processing log entry with segment_name, category, original times, duration, and all original columns
+        processing_log_entry = {
+            'segment_name': segment_name,
             'category': category,
-            'time_start': start_seconds,
-            'time_end': end_seconds,
+            'original_start': original_start,
+            'original_end': original_end,
+            'duration (s)': duration
+        }
+        # Add all other original columns
+        for col in df_original.columns:
+            if col not in ['start', 'end', 'category']:
+                processing_log_entry[col] = original_row_data[col]
+        
+        processing_log_data.append(processing_log_entry)
+        
+        # Create segments log entry
+        segments_log_data.append({
+            'segment_name': segment_name,
+            'category': category,
+            'original_start': original_start,
+            'original_end': original_end,
+            'start (s)': start_seconds,
+            'end (s)': end_seconds,
             'duration (s)': duration,
-            'frame_start': start_frame,
-            'frame_end': end_frame
+            'padding (s)': padding_seconds,
+            'start (frame)': start_frame,
+            'end (frame)': end_frame
         })
         
-        print(f"  Saved: {output_filename}")
+        emit(f"  Saved: {output_filename}")
     
-    # Save log CSV
+    # Save processing log CSV (with all original columns)
     log_csv_path = os.path.join(output_dir, 'processing_log.csv')
-    log_df = pd.DataFrame(log_data)
+    log_df = pd.DataFrame(processing_log_data)
     log_df.to_csv(log_csv_path, index=False)
-    print(f"\nLog saved to: {log_csv_path}")
+    emit(f"\nProcessing log saved to: {log_csv_path}")
 
-    segments_csv_path = os.path.join(output_dir, 'segments_converted_log.csv')   
-    df_segments.to_csv(segments_csv_path, index=False)
-    print(f"Segment log saved to: {segments_csv_path}")
-    print(f"Total segments processed: {len(log_data)}")
+    # Save segments log CSV
+    segments_csv_path = os.path.join(output_dir, 'segments_log.csv')   
+    segments_df = pd.DataFrame(segments_log_data)
+    segments_df.to_csv(segments_csv_path, index=False)
+    emit(f"Segments log saved to: {segments_csv_path}")
+    emit(f"Total segments processed: {len(processing_log_data)}")
+    emit(f"\nAll output saved to log file: {log_file_path}")
+    
+    # Close log file
+    log_file.close()
 
 
 if __name__ == "__main__":

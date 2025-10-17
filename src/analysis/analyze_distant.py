@@ -13,7 +13,7 @@ CONFIG = {
     'POINTS_PREFIX': 'face',  # Prefix used in CSV columns for keypoints
     'ZOOM_MODE': 'time',  # 'frame' or 'time' - determines which mode dict to use
     'TIME_MODE': {
-        'ZOOM_DURATION': [60, 65],  # [start_time, end_time] in seconds
+        'ZOOM_DURATION': [397, 400],  # [start_time, end_time] in seconds
         'X_AXIS_MODE': 'time',  # Display time on x-axis
     },
     'FRAME_MODE': {

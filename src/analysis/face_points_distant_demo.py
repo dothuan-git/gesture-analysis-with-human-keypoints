@@ -15,7 +15,7 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0004.MP4',
+    'VIDEO_PATH': 'workspaces/IMG_0004/chunks_001/segment_1.mp4',
     'OUTPUT_PATH': '',
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
@@ -117,6 +117,7 @@ def create_distance_plot(distance_history: Dict[Tuple[int, int], deque],
     # Auto-scale y-axis based on data
     ax.relim()
     ax.autoscale_view()
+    # ax.set_ylim(50, 100)
     
     # Convert plot to image
     fig.canvas.draw()
