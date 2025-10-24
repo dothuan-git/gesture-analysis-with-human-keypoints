@@ -11,8 +11,8 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/GX010016_1080_120fps.MP4',
-    'OUTPUT_PATH': 'workspaces/GX010016_1080_120fps/runs_006',
+    'VIDEO_PATH': 'assets/IMG_0018.MOV',
+    'OUTPUT_PATH': '',
     'REAL_TIME': False,
     'SAVE_VIDEO': False,
     'SAVE_FRAMES': False,
@@ -73,7 +73,7 @@ def initialize_video_capture() -> Tuple[cv2.VideoCapture, Tuple[int, int], float
 def initialize_video_writer(width: int, height: int, fps: float, output_dir: str) -> Optional[cv2.VideoWriter]:
     """Initialize video writer if saving is enabled."""
     if not CONFIG['SAVE_VIDEO']:
-        return None
+        return None, output_dir
     output_path = get_video_path(prefix=output_dir, fps=int(fps))
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
     return cv2.VideoWriter(output_path, fourcc, fps, (width, height)), output_path
@@ -189,7 +189,8 @@ def main():
 
             annotated = process_frame(frame, hands, face_mesh, frame_idx, output_dir)
 
-            cv2.imshow("Hands + FaceMesh", annotated)
+            resized_for_display, _, _ = fit_to_screen(annotated)
+            cv2.imshow("Hands + FaceMesh", resized_for_display)
             if video_writer:
                 video_writer.write(annotated)
             if CONFIG['SAVE_FRAMES']:

@@ -7,67 +7,72 @@ import numpy as np
 import matplotlib.pyplot as plt
 from typing import Optional, Tuple, List, Set, Dict
 from collections import deque
+import wave
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from src.analysis.face_points_distant_demo import *
 from src.utils import *
 
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0018.MOV',
+    'VIDEO_PATH': 'workspaces/IMG_0004/chunks_005/video/IMG_0004_segment1.mp4',
+    'AUDIO_PATH': 'workspaces/IMG_0004/chunks_005/audio/IMG_0004_segment1.wav',
     'OUTPUT_PATH': '',
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json
     'LANDMARK_PAIRS': [
         (0, 17),
-        (61, 291),
     ],  # List of (landmark_id1, landmark_id2) pairs to measure distance
     'PLOT_HISTORY_LENGTH': 300,  # Number of frames to show in plot
-    'PLOT_SIZE': (16, 6),  # Plot size in pixels (width, height)
+    'PLOT_SIZE': (16, 10),  # Plot size in pixels (width, height) - increased for waveform
     'SAVE_FRAMES_WITH_PLOT': False,  # Save frames with plot side-by-side
     'DRAW_KEYPOINT_IDS': False,
 }
 
 
-def load_keypoint_indices(filter_keys: List[str]) -> Optional[Set[int]]:
-    """Load keypoint indices from keypoints.json based on filter keys."""
-    if not filter_keys:
-        return None
+def load_audio_waveform(audio_path: str) -> Tuple[Optional[np.ndarray], Optional[int]]:
+    """Load audio waveform from WAV file."""
+    if not os.path.exists(audio_path):
+        print(f"Warning: Audio file not found: {audio_path}")
+        return None, None
     
     try:
-        with open('keypoints.json', 'r') as f:
-            keypoints_data = json.load(f)
-        
-        indices = set()
-        for key in filter_keys:
-            if key in keypoints_data:
-                if key in ['rightHand', 'leftHand']:
-                    continue
-                indices.update(keypoints_data[key])
+        with wave.open(audio_path, 'rb') as wav_file:
+            sample_rate = wav_file.getframerate()
+            n_channels = wav_file.getnchannels()
+            n_frames = wav_file.getnframes()
+            sample_width = wav_file.getsampwidth()
+            
+            print(f"Audio info: {sample_rate} Hz, {n_channels} channel(s), {sample_width} bytes/sample")
+            
+            audio_data = wav_file.readframes(n_frames)
+            
+            # Convert to numpy array based on sample width
+            if sample_width == 1:
+                dtype = np.uint8
+            elif sample_width == 2:
+                dtype = np.int16
+            elif sample_width == 4:
+                dtype = np.int32
             else:
-                print(f"Warning: Key '{key}' not found in keypoints.json")
-        
-        return indices if indices else None
-    except FileNotFoundError:
-        print("Warning: keypoints.json not found. Processing all keypoints.")
-        return None
-    except json.JSONDecodeError:
-        print("Warning: Invalid JSON in keypoints.json. Processing all keypoints.")
-        return None
-
-
-def initialize_video_capture(video_path) -> Tuple[cv2.VideoCapture, Tuple[int, int]]:
-    """Initialize video capture and return capture object and frame dimensions."""
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        raise RuntimeError("Failed to open video file")
-    check_metadata(cap)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    return cap, (width, height), fps
+                print(f"Warning: Unsupported sample width: {sample_width}")
+                return None, None
+            
+            audio_array = np.frombuffer(audio_data, dtype=dtype)
+            
+            # If stereo, convert to mono by averaging channels
+            if n_channels == 2:
+                audio_array = audio_array.reshape(-1, 2).mean(axis=1).astype(dtype)
+                print("Converted stereo to mono")
+            
+            return audio_array, sample_rate
+            
+    except Exception as e:
+        print(f"Warning: Error loading audio file: {e}")
+        return None, None
 
 
 def calculate_landmark_distances(landmarks, landmark_pairs: List[Tuple[int, int]], 
@@ -94,37 +99,70 @@ def calculate_landmark_distances(landmarks, landmark_pairs: List[Tuple[int, int]
     return distances
 
 
-def create_distance_plot(distance_history: Dict[Tuple[int, int], deque], 
-                        frame_idx: int) -> np.ndarray:
-    """Create a matplotlib plot of landmark distances over time."""
+def create_distance_and_waveform_plot(distance_history: Dict[Tuple[int, int], deque], 
+                                      frame_idx: int,
+                                      audio_data: Optional[np.ndarray],
+                                      sample_rate: Optional[int],
+                                      fps: float,
+                                      video_name: str) -> np.ndarray:
+    """Create a matplotlib plot with distance plot and waveform."""
     # Set the backend to Agg to avoid display issues
     plt.switch_backend('Agg')
     
     plot_width, plot_height = CONFIG['PLOT_SIZE']
-    fig, ax = plt.subplots(figsize=(plot_width, plot_height), dpi=100)
+    fig = plt.figure(figsize=(plot_width, plot_height), dpi=100)
     
-    # Plot each landmark pair
+    # Create two subplots: distance plot on top, waveform on bottom
+    ax1 = plt.subplot(2, 1, 1)
+    ax2 = plt.subplot(2, 1, 2)
+    
+    # Plot 1: Distance plot
     colors = plt.cm.tab10(np.linspace(0, 1, len(distance_history)))
     for i, (pair, history) in enumerate(distance_history.items()):
         frames = list(range(max(0, frame_idx - len(history) + 1), frame_idx + 1))
-        ax.plot(frames, list(history), label=f'Pair {pair[0]}-{pair[1]}', marker='o', 
+        ax1.plot(frames, list(history), label=f'Pair {pair[0]}-{pair[1]}', marker='o', 
                 color=colors[i], linewidth=2)
     
-    ax.set_xlabel('Frame', fontsize=10)
-    ax.set_ylabel('Distance (pixels)', fontsize=10)
-    ax.set_title('Landmark Distances Over Time', fontsize=12, fontweight='bold')
-    ax.legend(loc='upper right', fontsize=8)
-    ax.grid(True, alpha=0.3)
+    ax1.set_xlabel('Frame', fontsize=10)
+    ax1.set_ylabel('Distance (pixels)', fontsize=10)
+    ax1.set_title(f'Landmark Distances Over Time - {video_name}', fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper right', fontsize=8)
+    ax1.grid(True, alpha=0.3)
+    ax1.relim()
+    ax1.autoscale_view()
     
-    # Auto-scale y-axis based on data
-    ax.relim()
-    ax.autoscale_view()
-    # ax.set_ylim(50, 100)
+    # Plot 2: Waveform
+    if audio_data is not None and sample_rate is not None:
+        # Calculate current time in video
+        current_time = frame_idx / fps
+        
+        # Show full audio waveform
+        time_array = np.linspace(0, len(audio_data) / sample_rate, len(audio_data))
+        
+        # Plot full waveform
+        ax2.plot(time_array, audio_data, color='steelblue', linewidth=0.5)
+        
+        # Add vertical line for current position
+        ax2.axvline(x=current_time, color='red', linestyle='--', linewidth=2, 
+                   label='Current Frame')
+        
+        ax2.set_xlabel('Time (seconds)', fontsize=10)
+        ax2.set_ylabel('Amplitude', fontsize=10)
+        ax2.set_title(f'Audio Waveform (Full Length) - {video_name}', fontsize=12, fontweight='bold')
+        ax2.legend(loc='upper right', fontsize=8)
+        ax2.grid(True, alpha=0.3)
+        
+    else:
+        ax2.text(0.5, 0.5, 'No Audio Available', 
+                horizontalalignment='center', verticalalignment='center',
+                transform=ax2.transAxes, fontsize=14, color='gray')
+        ax2.set_xticks([])
+        ax2.set_yticks([])
+    
     plt.tight_layout()
     
     # Convert plot to image
     fig.canvas.draw()
-    # Use buffer_rgba() instead of tostring_rgb()
     buf = fig.canvas.buffer_rgba()
     plot_img = np.asarray(buf)
     plt.close(fig)
@@ -149,42 +187,13 @@ def extract_and_write_distances(frame_index: int, distances: Dict[Tuple[int, int
         writer.writerow(row)
 
 
-def combine_frame_and_plot(annotated_frame: np.ndarray, plot_img: np.ndarray) -> np.ndarray:
-    """Combine video frame and plot depending on orientation."""
-    plot_h, plot_w = plot_img.shape[:2]
-    frame_h, frame_w = annotated_frame.shape[:2]
-
-    if frame_h > frame_w:
-        # === Vertical frame → plot on the right ===
-        combined_height = max(frame_h, plot_h)
-        combined_width = frame_w + plot_w
-        combined_frame = np.zeros((combined_height, combined_width, 3), dtype=np.uint8)
-
-        # Center vertically
-        y_offset_frame = (combined_height - frame_h) // 2
-        y_offset_plot = (combined_height - plot_h) // 2
-        combined_frame[y_offset_frame:y_offset_frame + frame_h, :frame_w] = annotated_frame
-        combined_frame[y_offset_plot:y_offset_plot + plot_h, frame_w:frame_w + plot_w] = plot_img
-
-    else:
-        # === Horizontal frame → plot at the bottom ===
-        scale_ratio = frame_w / plot_w
-        new_plot_h = int(plot_h * scale_ratio)
-        resized_plot = cv2.resize(plot_img, (frame_w, new_plot_h))
-
-        combined_height = frame_h + new_plot_h
-        combined_width = frame_w
-        combined_frame = np.zeros((combined_height, combined_width, 3), dtype=np.uint8)
-
-        combined_frame[:frame_h, :] = annotated_frame
-        combined_frame[frame_h:frame_h + new_plot_h, :] = resized_plot
-
-    return combined_frame
-
-
 def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int, 
                  output_dir: str, keypoint_indices: Optional[Set[int]],
-                 distance_history: Dict[Tuple[int, int], deque]) -> Tuple[np.ndarray, np.ndarray]:
+                 distance_history: Dict[Tuple[int, int], deque],
+                 audio_data: Optional[np.ndarray],
+                 sample_rate: Optional[int],
+                 fps: float,
+                 video_name: str) -> Tuple[np.ndarray, np.ndarray]:
     """Process a frame for face detection, visualization, and distance calculation."""
     annotated_frame = frame.copy()
     mediapipe_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -239,17 +248,18 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                 if id1 < len(landmarks) and id2 < len(landmarks):
                     pt1 = (int(landmarks[id1].x * width), int(landmarks[id1].y * height))
                     pt2 = (int(landmarks[id2].x * width), int(landmarks[id2].y * height))
-                    cv2.line(annotated_frame, pt1, pt2, (0, 0, 255), 2)
+                    cv2.line(annotated_frame, pt1, pt2, (0, 0, 255), 1)
                     
                     # Draw distance text at midpoint
                     mid_x = (pt1[0] + pt2[0]) // 2
                     mid_y = (pt1[1] + pt2[1]) // 2
                     distance_text = f"{distances[pair]:.1f}"
                     cv2.putText(annotated_frame, distance_text, (mid_x + 5, mid_y - 10),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 2)
+                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
 
-    # Create distance plot
-    plot_img = create_distance_plot(distance_history, frame_idx)
+    # Create distance and waveform plot
+    plot_img = create_distance_and_waveform_plot(distance_history, frame_idx, 
+                                                 audio_data, sample_rate, fps, video_name)
     
     # Add frame index text
     cv2.putText(annotated_frame, f"Frame: {frame_idx}", (10, 30), 
@@ -260,14 +270,36 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
 
 def main():
     """Main function to process video, extract landmarks, calculate distances, and visualize."""
+    # Validate input paths
+    video_path = CONFIG['VIDEO_PATH']
+    audio_path = CONFIG['AUDIO_PATH']
+    
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
+    
+    if not os.path.exists(audio_path):
+        print(f"Warning: Audio file not found: {audio_path}")
+        print("Continuing without audio...")
+    
     # Create output directory
     output_dir = CONFIG["OUTPUT_PATH"]
     if not os.path.exists(output_dir) or len(output_dir) == 0:
-        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
+        root_path = f'workspaces/{video_path.split("/")[-1].split(".")[0]}'
         output_dir = create_incremented_dir(root_path, 'runs')
 
     print(f"Output directory: {output_dir}")
+    print(f"Video path: {video_path}")
+    print(f"Audio path: {audio_path}")
     print(f"Measuring distances for pairs: {CONFIG['LANDMARK_PAIRS']}")
+
+    # Load audio waveform
+    print("\nLoading audio...")
+    audio_data, sample_rate = load_audio_waveform(audio_path)
+    if audio_data is not None:
+        print(f"Audio loaded: {len(audio_data)} samples at {sample_rate} Hz")
+        print(f"Audio duration: {len(audio_data) / sample_rate:.2f} seconds")
+    else:
+        print("No audio available or loading failed")
 
     # Load keypoint filter indices
     keypoint_indices = load_keypoint_indices(CONFIG.get('KEYPOINTS_FILTER', []))
@@ -278,9 +310,26 @@ def main():
 
     # Initialize distance history
     distance_history: Dict[Tuple[int, int], deque] = {}
+    
+    # Extract video name from path
+    video_name = os.path.splitext(os.path.basename(video_path))[0]
 
     try:
-        cap, (width, height), _ = initialize_video_capture(CONFIG['VIDEO_PATH'])
+        cap, (width, height), fps = initialize_video_capture(video_path)
+        print(f"Video: {width}x{height} @ {fps} fps")
+        
+        # Get total frame count
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        video_duration = total_frames / fps
+        print(f"Video duration: {video_duration:.2f} seconds ({total_frames} frames)")
+        
+        # Check if audio and video durations match
+        if audio_data is not None:
+            audio_duration = len(audio_data) / sample_rate
+            duration_diff = abs(audio_duration - video_duration)
+            if duration_diff > 0.1:  # More than 100ms difference
+                print(f"Warning: Audio ({audio_duration:.2f}s) and video ({video_duration:.2f}s) durations differ by {duration_diff:.2f}s")
+        
         frame_idx = 0
 
         while cap.isOpened():
@@ -291,7 +340,8 @@ def main():
 
             annotated_frame, plot_img = process_frame(frame, frame_idx, width, height, 
                                                      output_dir, keypoint_indices, 
-                                                     distance_history)
+                                                     distance_history, audio_data, 
+                                                     sample_rate, fps, video_name)
 
             # Combine annotated frame and plot depending on frame orientation
             combined_frame = combine_frame_and_plot(annotated_frame, plot_img)
@@ -311,8 +361,11 @@ def main():
 
         # Save the last plot
         if distance_history:
-            last_plot = create_distance_plot(distance_history, frame_idx - 1)
+            last_plot = create_distance_and_waveform_plot(distance_history, frame_idx - 1,
+                                                         audio_data, sample_rate, fps, video_name)
             cv2.imwrite(f'{output_dir}/last_plot.jpg', last_plot)
+            print(f"\nProcessed {frame_idx} frames")
+            print(f"Results saved to: {output_dir}")
 
     except Exception as e:
         print(f"Error: {e}")

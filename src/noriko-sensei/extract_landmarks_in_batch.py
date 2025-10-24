@@ -5,6 +5,8 @@ import json
 import mediapipe as mp
 import numpy as np
 from typing import Optional, Tuple, List, Set
+import glob
+from pathlib import Path
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -13,15 +15,16 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0018.MOV',
-    'OUTPUT_PATH': '',
+    'INPUT_FOLDER': 'workspaces/IMG_0004/chunks_006/video',  # Folder containing input videos
+    'OUTPUT_SUBFOLDER': 'landmarks',  # Subfolder name for output (will be created in parent of video folder)
+    'VIDEO_EXTENSION': '*.mp4',  # Video file pattern to match
     'DETECT_FACE': True,
     'DETECT_HANDS': False,
     'SAVE_FRAMES': False,
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
-    'DRAW_KEYPOINT_IDS': True,
+    'DRAW_KEYPOINT_IDS': False,
 }
 HAND_CONNECTIONS = load_hand_connections()
 
@@ -66,11 +69,11 @@ def filter_landmarks(landmarks, keypoint_indices: Optional[Set[int]]):
     return filtered
 
 
-def initialize_video_capture() -> Tuple[cv2.VideoCapture, Tuple[int, int]]:
+def initialize_video_capture(video_path: str) -> Tuple[cv2.VideoCapture, Tuple[int, int]]:
     """Initialize video capture and return capture object and frame dimensions."""
-    cap = cv2.VideoCapture(CONFIG['VIDEO_PATH'])
+    cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        raise RuntimeError("Failed to open video file")
+        raise RuntimeError(f"Failed to open video file: {video_path}")
     check_metadata(cap)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -154,7 +157,8 @@ def extract_and_write_hand_landmarks(frame_index: int, hand_result, csv_path: st
 
 
 def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int, 
-                 output_dir: str, keypoint_indices: Optional[Set[int]] = None) -> np.ndarray:
+                 output_dir: str, keypoint_indices: Optional[Set[int]] = None, 
+                 video_name: str = '') -> np.ndarray:
     """Process a frame for face and hand detection, visualization, and data extraction."""
     annotated_frame = frame.copy()
     mediapipe_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
@@ -170,7 +174,8 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
         )
         with mp.tasks.vision.FaceLandmarker.create_from_options(face_options) as landmarker:
             face_result = landmarker.detect(mediapipe_image)
-            face_csv = f'{output_dir}/face.csv'
+            # Use video_name in filename
+            face_csv = f'{output_dir}/{video_name}_face.csv' if video_name else f'{output_dir}/face.csv'
             extract_and_write_face_landmarks(frame_idx, face_result, csv_path=face_csv, 
                                             keypoint_indices=keypoint_indices)
             
@@ -203,7 +208,8 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
         )
         with mp.tasks.vision.HandLandmarker.create_from_options(hand_options) as handmarker:
             hand_result = handmarker.detect(mediapipe_image)
-            hand_csv = f'{output_dir}/hands_2.csv'
+            # Use video_name in filename
+            hand_csv = f'{output_dir}/{video_name}_hands.csv' if video_name else f'{output_dir}/hands.csv'
             extract_and_write_hand_landmarks(frame_idx, hand_result, csv_path=hand_csv)
 
             if hand_result.hand_landmarks:
@@ -232,50 +238,128 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
     return annotated_frame
 
 
-def main():
-    """Main function to process video, extract landmarks, and save annotated frames."""
-    # Create output directory
-    output_dir = CONFIG["OUTPUT_PATH"]
-    if not os.path.exists(output_dir) or len(output_dir) == 0:
-        root_path = f'workspaces/{CONFIG["VIDEO_PATH"].split("/")[-1].split(".")[0]}'
-        output_dir = create_incremented_dir(root_path, 'runs')
-
-    # Load keypoint filter indices
-    keypoint_indices = load_keypoint_indices(CONFIG.get('KEYPOINTS_FILTER', []))
-    if keypoint_indices:
-        print(f"Filtering {len(keypoint_indices)} keypoints: {sorted(keypoint_indices)}")
-    else:
-        print("Processing all keypoints")
-
+def process_single_video(video_path: str, output_dir: str, keypoint_indices: Optional[Set[int]], 
+                        show_preview: bool = True) -> bool:
+    """Process a single video file and extract landmarks."""
+    video_name = Path(video_path).stem
+    print(f"\n{'='*60}")
+    print(f"Processing: {video_name}")
+    print(f"{'='*60}")
+    
+    # Use output_dir directly (no subdirectory per video)
+    video_output_dir = output_dir
+    
     try:
-        cap, (width, height) = initialize_video_capture()
+        cap, (width, height) = initialize_video_capture(video_path)
         frame_idx = 0
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        
+        print(f"Total frames: {total_frames}")
+        print(f"Resolution: {width}x{height}")
+        print(f"Output directory: {video_output_dir}")
 
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
-                print("Stream ended.")
+                print(f"Finished processing {frame_idx} frames")
                 break
 
-            annotated_frame = process_frame(frame, frame_idx, width, height, output_dir, keypoint_indices)
+            annotated_frame = process_frame(frame, frame_idx, width, height, video_output_dir, keypoint_indices, video_name)
 
             # Save annotated frame
             if CONFIG['SAVE_FRAMES']:
-                frames_dir = f'{output_dir}/frames_2'
+                frames_dir = f'{video_output_dir}/frames'
                 create_folder_if_not_exist(frames_dir)
-                cv2.imwrite(f'{frames_dir}/{frame_idx}.jpg', annotated_frame)
-            
-            resized_for_display, _, _ = fit_to_screen(annotated_frame)
-            cv2.imshow('Press Q to quit...', resized_for_display)
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+                cv2.imwrite(f'{frames_dir}/{frame_idx:06d}.jpg', annotated_frame)
+
+            # Show preview
+            if show_preview:
+                cv2.imshow(f'Processing: {video_name} (Press Q to skip)', annotated_frame)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    print("Skipped by user")
+                    break
+
+            # Progress indicator
+            if frame_idx % 30 == 0:
+                progress = (frame_idx / total_frames * 100) if total_frames > 0 else 0
+                print(f"Progress: {frame_idx}/{total_frames} ({progress:.1f}%)", end='\r')
 
             frame_idx += 1
 
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
         cap.release()
+        print(f"\n✓ Completed: {video_name} ({frame_idx} frames)")
+        return True
+
+    except Exception as e:
+        print(f"\n✗ Error processing {video_name}: {e}")
+        return False
+
+
+def main():
+    """Main function to process multiple videos from a folder."""
+    # Get input folder and prepare output directory
+    input_folder = CONFIG['INPUT_FOLDER']
+    video_pattern = CONFIG['VIDEO_EXTENSION']
+    
+    if not os.path.exists(input_folder):
+        print(f"Error: Input folder not found: {input_folder}")
+        return
+    
+    # Create output directory in the parent of video folder
+    parent_dir = str(Path(input_folder).parent)
+    output_dir = os.path.join(parent_dir, CONFIG['OUTPUT_SUBFOLDER'])
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print(f"Input folder: {input_folder}")
+    print(f"Output folder: {output_dir}")
+    
+    # Find all video files
+    video_files = sorted(glob.glob(os.path.join(input_folder, video_pattern)))
+    
+    if not video_files:
+        print(f"No video files found matching pattern: {video_pattern}")
+        return
+    
+    print(f"\nFound {len(video_files)} video(s) to process:")
+    for i, vf in enumerate(video_files, 1):
+        print(f"  {i}. {Path(vf).name}")
+    
+    # Load keypoint filter indices
+    keypoint_indices = load_keypoint_indices(CONFIG.get('KEYPOINTS_FILTER', []))
+    if keypoint_indices:
+        print(f"\nFiltering {len(keypoint_indices)} keypoints: {sorted(keypoint_indices)}")
+    else:
+        print("\nProcessing all keypoints")
+    
+    # Process each video
+    successful = 0
+    failed = 0
+    
+    try:
+        for video_path in video_files:
+            if process_single_video(video_path, output_dir, keypoint_indices, show_preview=False):
+                successful += 1
+            else:
+                failed += 1
+            
+            # Close any open windows between videos
+            cv2.destroyAllWindows()
+        
+        # Summary
+        print(f"\n{'='*60}")
+        print(f"SUMMARY")
+        print(f"{'='*60}")
+        print(f"Total videos: {len(video_files)}")
+        print(f"Successful: {successful}")
+        print(f"Failed: {failed}")
+        print(f"Output saved to: {output_dir}")
+        
+    except KeyboardInterrupt:
+        print("\n\nProcessing interrupted by user")
+    except Exception as e:
+        print(f"\nUnexpected error: {e}")
+    finally:
         cv2.destroyAllWindows()
 
 

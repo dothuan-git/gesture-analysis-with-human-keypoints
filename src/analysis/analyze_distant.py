@@ -5,7 +5,7 @@ from typing import List, Tuple
 
 # Configuration constants
 CONFIG = {
-    'CSV_PATH': 'data/IMG_0004/face.csv',
+    'CSV_PATH': 'workspaces/IMG_0004/runs_001/face.csv',
     'FPS': 30.0,  # Frames per second of the video
     'RESOLUTION': (720, 1280),  # (width, height) in pixels - CHANGE THIS TO YOUR VIDEO RESOLUTION
     'POINT_PAIRS': [

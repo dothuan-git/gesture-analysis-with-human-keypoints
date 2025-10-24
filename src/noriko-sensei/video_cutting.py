@@ -2,6 +2,8 @@ import pandas as pd
 import cv2
 import os
 from datetime import datetime
+import subprocess
+import numpy as np
 
 import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -11,7 +13,7 @@ CONFIG = {
     'VIDEO_PATH': 'assets/IMG_0004.MP4',
     'CSV_PATH': 'data/FURUKAWA-PilotExp.xlsx',
     'OUTPUT_DIR': '',
-    'PADDING_SECONDS': 1,  # Number of seconds to pad before and after each segment
+    'PADDING_SECONDS': 0,  # Number of seconds to pad before and after each segment
 }
 
 
@@ -47,6 +49,58 @@ def time_to_seconds(time_str):
     except Exception as e:
         print(f"Error parsing time '{time_str}': {e}")
         return None
+
+
+def extract_audio_segment(video_path, start_time, end_time, output_path, padding_seconds=0):
+    """
+    Extract audio segment from video using ffmpeg and save as WAV file.
+    
+    Args:
+        video_path: Path to input video
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        output_path: Path to save output audio (should end with .wav)
+        padding_seconds: Number of seconds to pad before and after the segment
+    
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        # Apply padding
+        padded_start_time = max(0, start_time - padding_seconds)
+        duration = (end_time + padding_seconds) - padded_start_time
+        
+        # FFmpeg command to extract audio segment
+        command = [
+            'ffmpeg',
+            '-i', video_path,
+            '-ss', str(padded_start_time),
+            '-t', str(duration),
+            '-vn',  # No video
+            '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian (standard WAV format)
+            '-ar', '44100',  # Sample rate 44.1kHz
+            '-ac', '2',  # Stereo
+            '-y',  # Overwrite output file
+            output_path
+        ]
+        
+        # Run ffmpeg
+        result = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            return True
+        else:
+            print(f"FFmpeg error: {result.stderr}")
+            return False
+            
+    except Exception as e:
+        print(f"Error extracting audio: {e}")
+        return False
 
 
 def cut_video_segment(video_path, start_time, end_time, output_path, fps, padding_seconds=0):
@@ -142,6 +196,12 @@ def main():
         root_path = f'workspaces/{video_name}'
         output_dir = create_incremented_dir(root_path, 'chunks')
     
+    # Create subdirectories for video and audio
+    video_output_dir = os.path.join(output_dir, 'video')
+    audio_output_dir = os.path.join(output_dir, 'audio')
+    os.makedirs(video_output_dir, exist_ok=True)
+    os.makedirs(audio_output_dir, exist_ok=True)
+    
     # Create log file for all print statements
     log_file_path = os.path.join(output_dir, 'processing_output.txt')
     log_file = open(log_file_path, 'w', encoding='utf-8')
@@ -187,6 +247,8 @@ def main():
     
     emit(f"Video FPS: {fps}")
     emit(f"Padding: {padding_seconds} seconds before and after each segment")
+    emit(f"Video output directory: {video_output_dir}")
+    emit(f"Audio output directory: {audio_output_dir}")
     emit(f"\nProcessing {len(df_segments)} segments...")
     
     # Initialize log data
@@ -196,7 +258,7 @@ def main():
     # Process each segment
     for idx, row in df_segments.iterrows():
         segment_id = row['segment_id']
-        segment_name = f"{video_name}_segment{segment_id}"
+        segment_name = f"segment{segment_id}"
         category = row['category']
         start_seconds = row['start_seconds']
         end_seconds = row['end_seconds']
@@ -204,9 +266,11 @@ def main():
         original_start = row['start']
         original_end = row['end']
         
-        # Create output filename
-        output_filename = f"{segment_name}.mp4"
-        output_path = os.path.join(output_dir, output_filename)
+        # Create output filenames
+        output_video_filename = f"{segment_name}.mp4"
+        output_audio_filename = f"{segment_name}.wav"
+        output_video_path = os.path.join(video_output_dir, output_video_filename)
+        output_audio_path = os.path.join(audio_output_dir, output_audio_filename)
         
         emit(f"- {segment_name}: {category} [{start_seconds}s - {end_seconds}s] - duration: {duration:.2f}s")
         if padding_seconds > 0:
@@ -217,10 +281,25 @@ def main():
             CONFIG['VIDEO_PATH'],
             start_seconds,
             end_seconds,
-            output_path,
+            output_video_path,
             fps,
             padding_seconds=padding_seconds
         )
+        emit(f"  Saved video: {output_video_filename}")
+        
+        # Extract audio segment with padding
+        audio_success = extract_audio_segment(
+            CONFIG['VIDEO_PATH'],
+            start_seconds,
+            end_seconds,
+            output_audio_path,
+            padding_seconds=padding_seconds
+        )
+        
+        if audio_success:
+            emit(f"  Saved audio: {output_audio_filename}")
+        else:
+            emit(f"  Warning: Failed to extract audio for {segment_name}")
         
         # Get all original columns for this row (using original index)
         original_row_index = row['original_index']
@@ -232,7 +311,7 @@ def main():
             'category': category,
             'original_start': original_start,
             'original_end': original_end,
-            'duration (s)': duration
+            'duration (s)': duration,
         }
         # Add all other original columns
         for col in df_original.columns:
@@ -252,10 +331,8 @@ def main():
             'duration (s)': duration,
             'padding (s)': padding_seconds,
             'start (frame)': start_frame,
-            'end (frame)': end_frame
+            'end (frame)': end_frame,
         })
-        
-        emit(f"  Saved: {output_filename}")
     
     # Save processing log CSV (with all original columns)
     log_csv_path = os.path.join(output_dir, 'processing_log.csv')

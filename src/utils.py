@@ -5,9 +5,11 @@ import re
 import json
 import datetime
 from pathlib import Path
+from typing import Tuple
 
 import numpy as np
 import matplotlib.pyplot as plt
+import tkinter as tk
 import mediapipe as mp
 from mediapipe import solutions
 from mediapipe.framework.formats import landmark_pb2
@@ -114,6 +116,27 @@ def get_latest_or_create(root: str | Path, prefix: str) -> Path:
         return create_incremented_dir(root, prefix)
 
     return latest_path
+
+
+def fit_to_screen(frame: np.ndarray) -> Tuple[np.ndarray, int, int]:
+    """Resize combined frame to fit actual screen while preserving aspect ratio."""
+    try:
+        root = tk.Tk()
+        screen_w, screen_h = root.winfo_screenwidth(), root.winfo_screenheight()
+        root.destroy()
+    except Exception:
+        screen_w, screen_h = 1920, 1080  # fallback for headless environments
+
+    usable_w = int(screen_w * 0.95)  # leave margins
+    usable_h = int(screen_h * 0.90)
+
+    combined_h, combined_w = frame.shape[:2]
+    scale = min(usable_w / combined_w, usable_h / combined_h, 1.0)
+    window_w = int(combined_w * scale)
+    window_h = int(combined_h * scale)
+
+    resized_frame = cv2.resize(frame, (window_w, window_h))
+    return resized_frame, window_w, window_h
 
 
 def load_hand_connections(json_path='hand_connections.json'):
