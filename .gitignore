@@ -3,3 +3,5 @@ assets/
 data/
 workspaces/
 venv/
+.claude/
+CLAUDE.md

@@ -18,7 +18,7 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'workspaces/IMG_0018/chunks_001/video/segment1.mp4',
+    'VIDEO_PATH': 'workspaces/IMG_0018/chunks_007/video/segment1.mp4',
     'OUTPUT_PATH': '',
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',

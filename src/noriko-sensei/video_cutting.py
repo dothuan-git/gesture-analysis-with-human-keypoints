@@ -51,141 +51,104 @@ def time_to_seconds(time_str):
         return None
 
 
-def extract_audio_segment(video_path, start_time, end_time, output_path, padding_seconds=0):
+def cut_video_segment(video_path, start_time, end_time, output_path, fps, padding_seconds=0):
     """
-    Extract audio segment from video using ffmpeg and save as WAV file.
-    
+    Cut a segment from video (with audio) using FFmpeg.
+
     Args:
         video_path: Path to input video
         start_time: Start time in seconds
         end_time: End time in seconds
-        output_path: Path to save output audio (should end with .wav)
+        output_path: Path to save output video (with audio included)
+        fps: Frames per second of the video
         padding_seconds: Number of seconds to pad before and after the segment
-    
+
+    Returns:
+        tuple: (start_frame, end_frame) for logging purposes
+    """
+    try:
+        # Apply padding and calculate duration
+        padded_start_time = max(0, start_time - padding_seconds)
+        duration = (end_time + padding_seconds) - padded_start_time
+
+        # Calculate frame numbers for logging
+        start_frame = int(padded_start_time * fps)
+        end_frame = int((padded_start_time + duration) * fps)
+
+        # FFmpeg command to cut video segment with audio
+        command = [
+            'ffmpeg',
+            '-hide_banner',
+            '-loglevel', 'quiet',
+            '-i', video_path,
+            '-ss', str(padded_start_time),
+            '-t', str(duration),
+            '-c:v', 'copy',  # Copy video codec (no re-encoding)
+            '-c:a', 'aac',   # Transcode audio to AAC
+            '-y',  # Overwrite output file
+            output_path
+        ]
+
+        # Run ffmpeg
+        result = subprocess.run(
+            command,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        if result.returncode != 0:
+            print(f"FFmpeg error: Failed to cut video segment")
+            return start_frame, end_frame
+
+        return start_frame, end_frame
+
+    except Exception as e:
+        print(f"Error cutting video segment: {e}")
+        return 0, 0
+
+
+def extract_audio_from_video(video_path, output_audio_path):
+    """
+    Extract audio from video file and save as WAV file using FFmpeg.
+
+    Args:
+        video_path: Path to input video file
+        output_audio_path: Path to save output audio (should end with .wav)
+
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        # Apply padding
-        padded_start_time = max(0, start_time - padding_seconds)
-        duration = (end_time + padding_seconds) - padded_start_time
-        
-        # FFmpeg command to extract audio segment
+        # FFmpeg command to extract audio from video
         command = [
             'ffmpeg',
+            '-hide_banner',
+            '-loglevel', 'quiet',
             '-i', video_path,
-            '-ss', str(padded_start_time),
-            '-t', str(duration),
             '-vn',  # No video
             '-acodec', 'pcm_s16le',  # PCM 16-bit little-endian (standard WAV format)
             '-ar', '44100',  # Sample rate 44.1kHz
             '-ac', '2',  # Stereo
             '-y',  # Overwrite output file
-            output_path
+            output_audio_path
         ]
-        
+
         # Run ffmpeg
         result = subprocess.run(
             command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
         )
-        
+
         if result.returncode == 0:
             return True
         else:
-            print(f"FFmpeg error: {result.stderr}")
+            print(f"FFmpeg error: Failed to extract audio")
             return False
-            
+
     except Exception as e:
-        print(f"Error extracting audio: {e}")
+        print(f"Error extracting audio from video: {e}")
         return False
-
-
-def cut_video_segment(video_path, start_time, end_time, output_path, fps, padding_seconds=0):
-    """
-    Cut a segment from video and save it with frame numbers overlaid.
-    
-    Args:
-        video_path: Path to input video
-        start_time: Start time in seconds
-        end_time: End time in seconds
-        output_path: Path to save output video
-        fps: Frames per second of the video
-        padding_seconds: Number of seconds to pad before and after the segment
-    """
-    cap = cv2.VideoCapture(video_path)
-    
-    # Get video properties
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    
-    # Create output writer
-    out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
-    
-    # Apply padding and ensure we don't go out of bounds
-    padded_start_time = max(0, start_time - padding_seconds)
-    padded_end_time = min(end_time + padding_seconds, total_frames / fps)
-    
-    # Calculate frame positions
-    start_frame = int(padded_start_time * fps)
-    end_frame = int(padded_end_time * fps)
-    
-    # Set video to start frame
-    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
-    
-    current_frame = start_frame
-    while current_frame <= end_frame:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        # Add frame number and timestamp overlay
-        text1 = f"frame: {current_frame}"
-        text2 = f"time: {current_frame/fps:.2f}s"
-
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 1
-        thickness = 2
-        color = (0, 255, 0)  # Green color
-
-        # Get text size for both lines
-        (text1_width, text1_height), baseline1 = cv2.getTextSize(text1, font, font_scale, thickness)
-        (text2_width, text2_height), baseline2 = cv2.getTextSize(text2, font, font_scale, thickness)
-
-        # Position for top-right corner
-        text1_x = width - text1_width - 10
-        text1_y = 40
-        line_spacing = 20  # Space between lines
-        text2_x = width - text2_width - 10
-        text2_y = text1_y + text1_height + line_spacing
-
-        # Draw semi-transparent background for first line
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (text1_x - 5, text1_y - text1_height - 5), 
-                    (text1_x + text1_width + 5, text1_y + baseline1 + 5), 
-                    (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
-        cv2.putText(frame, text1, (text1_x, text1_y), font, font_scale, color, thickness)
-
-        # Draw semi-transparent background for second line
-        overlay = frame.copy()
-        cv2.rectangle(overlay, (text2_x - 5, text2_y - text2_height - 5), 
-                    (text2_x + text2_width + 5, text2_y + baseline2 + 5), 
-                    (0, 0, 0), -1)
-        frame = cv2.addWeighted(overlay, 0.6, frame, 0.4, 0)
-        cv2.putText(frame, text2, (text2_x, text2_y), font, font_scale, color, thickness)
-                
-        out.write(frame)
-        current_frame += 1
-    
-    cap.release()
-    out.release()
-    
-    return start_frame, end_frame
 
 
 def main():
@@ -271,12 +234,12 @@ def main():
         output_audio_filename = f"{segment_name}.wav"
         output_video_path = os.path.join(video_output_dir, output_video_filename)
         output_audio_path = os.path.join(audio_output_dir, output_audio_filename)
-        
+
         emit(f"- {segment_name}: {category} [{start_seconds}s - {end_seconds}s] - duration: {duration:.2f}s")
         if padding_seconds > 0:
             emit(f"  (with padding {padding_seconds}s: {max(0, start_seconds - padding_seconds)}s - {min(end_seconds + padding_seconds, max_frame/fps)}s)")
 
-        # Cut video segment with padding
+        # Cut video segment with audio using FFmpeg
         start_frame, end_frame = cut_video_segment(
             CONFIG['VIDEO_PATH'],
             start_seconds,
@@ -285,17 +248,10 @@ def main():
             fps,
             padding_seconds=padding_seconds
         )
-        emit(f"  Saved video: {output_video_filename}")
-        
-        # Extract audio segment with padding
-        audio_success = extract_audio_segment(
-            CONFIG['VIDEO_PATH'],
-            start_seconds,
-            end_seconds,
-            output_audio_path,
-            padding_seconds=padding_seconds
-        )
-        
+        emit(f"  Saved video with audio: {output_video_filename}")
+
+        # Extract audio from the cut video segment
+        audio_success = extract_audio_from_video(output_video_path, output_audio_path)
         if audio_success:
             emit(f"  Saved audio: {output_audio_filename}")
         else:
