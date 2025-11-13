@@ -10,8 +10,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from src.utils import *
 
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0004.MP4',
-    'CSV_PATH': 'data/FURUKAWA-PilotExp.xlsx',
+    'VIDEO_PATH': 'assets/IMG_0018.MOV',
+    'CSV_PATH': 'assets/IMG_0018.xlsx',
     'OUTPUT_DIR': '',
     'PADDING_SECONDS': 0,  # Number of seconds to pad before and after each segment
 }

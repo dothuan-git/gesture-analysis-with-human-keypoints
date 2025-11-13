@@ -15,7 +15,7 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'INPUT_FOLDER': 'workspaces/IMG_0004/chunks_006/video',  # Folder containing input videos
+    'INPUT_FOLDER': 'workspaces/IMG_0018/chunks_001/video',  # Folder containing input videos
     'OUTPUT_SUBFOLDER': 'landmarks',  # Subfolder name for output (will be created in parent of video folder)
     'VIDEO_EXTENSION': '*.mp4',  # Video file pattern to match
     'DETECT_FACE': True,

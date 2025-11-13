@@ -11,18 +11,18 @@ import wave
 
 # Configuration constants
 CONFIG = {
-    'INPUT_FOLDER': 'workspaces/IMG_0004/chunks_006/landmarks',
-    'AUDIO_FOLDER': 'workspaces/IMG_0004/chunks_006/audio',
+    'INPUT_FOLDER': 'workspaces/IMG_0018/chunks_001/landmarks',
+    'AUDIO_FOLDER': 'workspaces/IMG_0018/chunks_001/audio',
     'OUTPUT_SUBFOLDER': 'plots',
     'CSV_PATTERN': '*_face.csv',
     'AUDIO_EXTENSION': '.wav',
-    'FPS': 30, 
+    'FPS': 60, 
     'POINT_PAIRS': [
         # Define pairs of landmark indices to calculate distances
         (0, 17, 'Point 0-17'),
         # Add more pairs as needed
     ],
-    'PLOT_DPI': 100,
+    'PLOT_DPI': 300,
     'PLOT_FIGSIZE': (12, 8),
     'SAVE_INDIVIDUAL_PLOTS': True,  # Save separate plot for each video
 }

@@ -21,7 +21,7 @@ CONFIG = {
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
     ],  # List of keys from keypoints.json, e.g., ['lipsUpperOuter', 'lipsLowerOuter']
-    'DRAW_KEYPOINT_IDS': True,
+    'DRAW_KEYPOINT_IDS': False,
 }
 HAND_CONNECTIONS = load_hand_connections()
 

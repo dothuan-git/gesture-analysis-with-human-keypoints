@@ -18,7 +18,7 @@ from src.utils import *
 
 # Configuration constants
 CONFIG = {
-    'VIDEO_PATH': 'assets/IMG_0018.MOV',
+    'VIDEO_PATH': 'workspaces/IMG_0018/chunks_001/video/segment1.mp4',
     'OUTPUT_PATH': '',
     'KEYPOINTS_FILTER': [
         'lipsUpperOuter', 'lipsLowerOuter',
@@ -254,14 +254,14 @@ def process_frame(frame: np.ndarray, frame_idx: int, width: int, height: int,
                 if id1 < len(landmarks) and id2 < len(landmarks):
                     pt1 = (int(landmarks[id1].x * width), int(landmarks[id1].y * height))
                     pt2 = (int(landmarks[id2].x * width), int(landmarks[id2].y * height))
-                    cv2.line(annotated_frame, pt1, pt2, (0, 0, 255), 1)
+                    cv2.line(annotated_frame, pt1, pt2, (0, 0, 255), 2)
                     
                     # Draw distance text at midpoint
                     mid_x = (pt1[0] + pt2[0]) // 2
                     mid_y = (pt1[1] + pt2[1]) // 2
                     distance_text = f"{distances[pair]:.1f}"
                     cv2.putText(annotated_frame, distance_text, (mid_x + 5, mid_y - 10),
-                              cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 0, 255), 1)
+                              cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
 
     # Create distance and waveform plot
     plot_img = create_distance_and_waveform_plot(distance_history, frame_idx, 
