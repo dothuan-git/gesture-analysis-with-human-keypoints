@@ -120,10 +120,11 @@ def create_distance_and_waveform_plot(distance_history: Dict[Tuple[int, int], de
     colors = plt.cm.tab10(np.linspace(0, 1, len(distance_history)))
     for i, (pair, history) in enumerate(distance_history.items()):
         frames = list(range(max(0, frame_idx - len(history) + 1), frame_idx + 1))
-        ax1.plot(frames, list(history), label=f'Pair {pair[0]}-{pair[1]}', marker='o', 
+        times = [f / fps for f in frames]  # Convert frames to time (seconds)
+        ax1.plot(times, list(history), label=f'Pair {pair[0]}-{pair[1]}', marker='o',
                 color=colors[i], linewidth=2)
-    
-    ax1.set_xlabel('Frame', fontsize=10)
+
+    ax1.set_xlabel('Time (s)', fontsize=10)
     ax1.set_ylabel('Distance (pixels)', fontsize=10)
     ax1.set_title(f'Landmark Distances Over Time - {video_name}', fontsize=12, fontweight='bold')
     ax1.legend(loc='upper right', fontsize=8)
@@ -284,7 +285,21 @@ def main():
     # Create output directory
     output_dir = CONFIG["OUTPUT_PATH"]
     if not os.path.exists(output_dir) or len(output_dir) == 0:
-        root_path = f'workspaces/{video_path.split("/")[-1].split(".")[0]}'
+        # Check if video path contains 'segment'
+        if 'segment' in video_path:
+            # Extract segment name and find root workspace folder
+            # e.g., 'workspaces/IMG_0018/chunks_001/video/segment1.mp4' -> 'workspaces/IMG_0018/segment1'
+            video_name = video_path.split("/")[-1].split(".")[0]  # 'segment1'
+            parts = video_path.split("/")
+            # Find the 'workspaces' part and the next directory (e.g., 'IMG_0018')
+            workspaces_idx = next((i for i, p in enumerate(parts) if p == 'workspaces'), -1)
+            if workspaces_idx != -1 and workspaces_idx + 1 < len(parts):
+                workspace_name = parts[workspaces_idx + 1]  # e.g., 'IMG_0018'
+                root_path = f'workspaces/{workspace_name}/{video_name}'
+            else:
+                root_path = f'workspaces/{video_name}'
+        else:
+            root_path = f'workspaces/{video_path.split("/")[-1].split(".")[0]}'
         output_dir = create_incremented_dir(root_path, 'runs')
 
     print(f"Output directory: {output_dir}")

@@ -11,8 +11,8 @@ import wave
 
 # Configuration constants
 CONFIG = {
-    'INPUT_FOLDER': 'workspaces/IMG_0018/chunks_001/landmarks',
-    'AUDIO_FOLDER': 'workspaces/IMG_0018/chunks_001/audio',
+    'INPUT_FOLDER': 'workspaces/IMG_0018/chunks_002/landmarks',
+    'AUDIO_FOLDER': 'workspaces/IMG_0018/chunks_002/audio',
     'OUTPUT_SUBFOLDER': 'plots',
     'CSV_PATTERN': '*_face.csv',
     'AUDIO_EXTENSION': '.wav',
